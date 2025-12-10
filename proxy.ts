@@ -1,12 +1,14 @@
-import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const token = req.cookies.get("token")?.value;
+  const pathname = req.nextUrl.pathname;
 
-  const isDashboard = req.nextUrl.pathname.startsWith("/dashboard");
+  const isDashboard = pathname.startsWith("/dashboard");
 
+  // No token → redirect to login
   if (!token && isDashboard) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
@@ -15,13 +17,14 @@ export function middleware(req: NextRequest) {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
 
-      if (req.nextUrl.pathname.startsWith("/dashboard/settings")) {
-        if (decoded.role !== "SUPER_ADMIN" && decoded.role !== "ADMIN") {
+      // Role-protected route
+      if (pathname.startsWith("/dashboard/settings")) {
+        if (!["SUPER_ADMIN", "ADMIN"].includes(decoded.role)) {
           return NextResponse.redirect(new URL("/dashboard", req.url));
         }
       }
-    } catch {
-      // Invalid token, force login
+    } catch (err) {
+      // Invalid token → force login
       if (isDashboard) {
         return NextResponse.redirect(new URL("/login", req.url));
       }

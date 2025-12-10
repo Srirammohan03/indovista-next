@@ -96,20 +96,39 @@ export interface Metric {
   color?: 'blue' | 'green' | 'red' | 'orange';
 }
 
+export type CustomerType = 'Importer' | 'Distributor' | 'RetailChain' | 'RestaurantGroup';
+export type CustomerStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
+
 export interface Customer {
-  id: string;
-  name: string;
-  type: 'Importer' | 'Distributor' | 'Retail Chain' | 'Restaurant Group';
-  country: string;
-  city: string;
+  id: string;                    // Prisma cuid()
+  customerCode: string;          // CUST-001 etc
+  companyName: string;           // replaces name
+  type: CustomerType;
+
   contactPerson: string;
+  phone?: string;
   email: string;
+
+  address?: string;
+  city?: string;
+  country: string;
+
   currency: string;
   creditLimit: number;
-  paymentTerms: string;
+  usedCredits: number;
+  totalAmount: number;
+
+  paymentTerms?: string;
+  
   kycStatus: boolean;
   sanctionsCheck: boolean;
+
+  status: CustomerStatus;
+
+  createdAt: string;             // Date
+  updatedAt: string;             // Date
 }
+
 
 export interface Product {
   id: string;

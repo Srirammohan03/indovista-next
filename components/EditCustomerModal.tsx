@@ -1,81 +1,95 @@
-// components/AddCustomerModal.tsx
+// components/EditCustomerModal.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { X, Users } from "lucide-react";
-import { CustomerStatus, CustomerType } from "@/types";
+import { Customer, CustomerStatus, CustomerType } from "@/types";
 
-interface AddCustomerModalProps {
+interface EditCustomerModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: () => void; // callback to refresh list
+  customer: Customer | null;
+  onUpdated: (customer: Customer) => void;
 }
 
-export const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
+interface FormState {
+  companyName: string;
+  type: CustomerType;
+  contactPerson: string;
+  phone: string;
+  email: string;
+  address: string;
+  city: string;
+  country: string;
+  currency: string;
+  creditLimit: string;
+  usedCredits: string;
+  totalAmount: string;
+  paymentTerms: string;
+  status: CustomerStatus;
+  kycStatus: boolean;
+  sanctionsCheck: boolean;
+}
+
+export const EditCustomerModal: React.FC<EditCustomerModalProps> = ({
   isOpen,
   onClose,
-  onAdd,
+  customer,
+  onUpdated,
 }) => {
-  const [formData, setFormData] = useState({
-    companyName: "",
-    type: "Distributor" as CustomerType,
-    contactPerson: "",
-    phone: "",
-    email: "",
-    address: "",
-    city: "",
-    country: "",
-    currency: "INR",
-    creditLimit: "",
-    paymentTerms: "Net 30",
-    status: "ACTIVE" as CustomerStatus,
-    kycStatus: false,
-    sanctionsCheck: false,
-  });
-
+  const [formData, setFormData] = useState<FormState | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (isOpen && customer) {
+      setFormData({
+        companyName: customer.companyName ?? "",
+        type: customer.type,
+        contactPerson: customer.contactPerson ?? "",
+        phone: customer.phone ?? "",
+        email: customer.email ?? "",
+        address: customer.address ?? "",
+        city: customer.city ?? "",
+        country: customer.country ?? "",
+        currency: customer.currency ?? "INR",
+        creditLimit: (customer.creditLimit ?? 0).toString(),
+        usedCredits: (customer.usedCredits ?? 0).toString(),
+        totalAmount: (customer.totalAmount ?? 0).toString(),
+        paymentTerms: customer.paymentTerms ?? "",
+        status: customer.status,
+        kycStatus: customer.kycStatus,
+        sanctionsCheck: customer.sanctionsCheck,
+      });
+    }
+  }, [isOpen, customer]);
+
+  if (!isOpen || !customer || !formData) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
 
     try {
-      const res = await fetch("/api/customers", {
-        method: "POST",
+      const res = await fetch(`/api/customers/${customer.customerCode}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
           creditLimit: Number(formData.creditLimit || 0),
+          usedCredits: Number(formData.usedCredits || 0),
+          totalAmount: Number(formData.totalAmount || 0),
         }),
       });
 
       if (!res.ok) {
-        throw new Error("Failed to create customer");
+        throw new Error("Failed to update customer");
       }
 
-      onAdd();
-      onClose();
-      setFormData({
-        companyName: "",
-        type: "Distributor" as CustomerType,
-        contactPerson: "",
-        phone: "",
-        email: "",
-        address: "",
-        city: "",
-        country: "",
-        currency: "INR",
-        creditLimit: "",
-        paymentTerms: "Net 30",
-        status: "ACTIVE" as CustomerStatus,
-        kycStatus: false,
-        sanctionsCheck: false,
-      });
+      const updated = (await res.json()) as Customer;
+      onUpdated(updated);
     } catch (err) {
-      console.error("Error creating customer", err);
-      alert("Failed to create customer.");
+      console.error("Error updating customer", err);
+      alert("Failed to update customer.");
     } finally {
       setSubmitting(false);
     }
@@ -91,9 +105,9 @@ export const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
               <Users className="w-6 h-6 text-blue-600" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-gray-900">Add Customer</h2>
+              <h2 className="text-xl font-bold text-gray-900">Edit Customer</h2>
               <p className="text-sm text-gray-500">
-                Create a new partner profile
+                Update partner profile details
               </p>
             </div>
           </div>
@@ -270,7 +284,6 @@ export const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
               </label>
               <input
                 type="number"
-                placeholder="0.00"
                 className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                 value={formData.creditLimit}
                 onChange={(e) =>
@@ -289,11 +302,42 @@ export const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                   setFormData({ ...formData, paymentTerms: e.target.value })
                 }
               >
+                <option value="">None</option>
                 <option value="Net 15">Net 15</option>
                 <option value="Net 30">Net 30</option>
                 <option value="Net 45">Net 45</option>
                 <option value="Net 60">Net 60</option>
               </select>
+            </div>
+          </div>
+
+          {/* Used Credits + Total Amount */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Used Credits
+              </label>
+              <input
+                type="number"
+                className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                value={formData.usedCredits}
+                onChange={(e) =>
+                  setFormData({ ...formData, usedCredits: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Total Amount
+              </label>
+              <input
+                type="number"
+                className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                value={formData.totalAmount}
+                onChange={(e) =>
+                  setFormData({ ...formData, totalAmount: e.target.value })
+                }
+              />
             </div>
           </div>
 
@@ -361,7 +405,7 @@ export const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
               disabled={submitting}
               className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60"
             >
-              {submitting ? "Saving..." : "Add Customer"}
+              {submitting ? "Saving..." : "Save Changes"}
             </button>
           </div>
         </form>

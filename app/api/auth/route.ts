@@ -4,43 +4,44 @@ import jwt from "jsonwebtoken";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: Request) {
-  const { loginId, email, password } = await req.json();
+  try {
+    const { email, password } = await req.json();
 
-  const user = await prisma.user.findFirst({
-    where: {
-      OR: [
-        { loginId: loginId || undefined },
-        { email: email?.toLowerCase() || undefined },
-      ],
-    },
-  });
+    const user = await prisma.user.findFirst({
+      where: { email },
+    });
 
-  if (!user || !user.password) {
-    return NextResponse.json({ error: "User not found" }, { status: 400 });
+    if (!user) {
+      return NextResponse.json({ message: "Invalid credentials" }, { status: 401 });
+    }
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) {
+      return NextResponse.json({ message: "Invalid credentials" }, { status: 401 });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, role: user.role, email: user.email },
+      process.env.JWT_SECRET!,
+      { expiresIn: "7d" }
+    );
+
+    const res = NextResponse.json({
+      user: { id: user.id, email: user.email, role: user.role },
+    });
+
+    res.cookies.set({
+      name: "token",
+      value: token,
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+      path: "/",
+      maxAge: 60 * 60 * 24,
+    });
+
+    return res;
+  } catch (err) {
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
-
-  const valid = await bcrypt.compare(password, user.password);
-  if (!valid) {
-    return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
-  }
-
-  const token = jwt.sign(
-    { id: user.id, role: user.role, email: user.email, name: user.name },
-    process.env.JWT_SECRET!,
-    { expiresIn: "7d" }
-  );
-
-  const res = NextResponse.json({
-    success: true,
-    user: { id: user.id, name: user.name, role: user.role, email: user.email },
-  });
-
-  res.cookies.set("token", token, {
-    httpOnly: true,
-    path: "/",
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-  });
-
-  return res;
 }
