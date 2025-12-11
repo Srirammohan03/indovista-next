@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+// app/api/master-data/[type]/[id]/route.ts
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-const modelMap: any = {
+const modelMap: Record<string, any> = {
   ports: prisma.port,
   incoterms: prisma.incoterm,
   "status-codes": prisma.statusCode,
@@ -9,35 +10,57 @@ const modelMap: any = {
   "temp-presets": prisma.temperature,
 };
 
-export async function DELETE(req: Request, { params }: any) {
-  const { type, id } = params;
-  const model = modelMap[type];
+type RouteContext = {
+  params: Promise<{ type: string; id: string }>;
+};
 
-  if (!model) {
-    return NextResponse.json({ error: "Invalid type" }, { status: 400 });
+// DELETE /api/master-data/:type/:id
+export async function DELETE(_req: NextRequest, context: RouteContext) {
+  try {
+    const { type, id } = await context.params;
+    const model = modelMap[type];
+
+    if (!model) {
+      return NextResponse.json({ error: "Invalid type" }, { status: 400 });
+    }
+
+    await model.delete({
+      where: { id: Number(id) },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("[DELETE /api/master-data/[type]/[id]] Error:", error);
+    return NextResponse.json(
+      { error: "Server error while deleting record" },
+      { status: 500 }
+    );
   }
-
-  await model.delete({
-    where: { id: Number(id) },
-  });
-
-  return NextResponse.json({ success: true });
 }
 
-export async function PUT(req: Request, { params }: any) {
-  const { type, id } = params;
-  const model = modelMap[type];
+// PUT /api/master-data/:type/:id
+export async function PUT(req: NextRequest, context: RouteContext) {
+  try {
+    const { type, id } = await context.params;
+    const model = modelMap[type];
 
-  if (!model) {
-    return NextResponse.json({ error: "Invalid type" }, { status: 400 });
+    if (!model) {
+      return NextResponse.json({ error: "Invalid type" }, { status: 400 });
+    }
+
+    const body = await req.json();
+
+    const updated = await model.update({
+      where: { id: Number(id) },
+      data: body,
+    });
+
+    return NextResponse.json(updated);
+  } catch (error) {
+    console.error("[PUT /api/master-data/[type]/[id]] Error:", error);
+    return NextResponse.json(
+      { error: "Server error while updating record" },
+      { status: 500 }
+    );
   }
-
-  const body = await req.json();
-
-  const updated = await model.update({
-    where: { id: Number(id) },
-    data: body,
-  });
-
-  return NextResponse.json(updated);
 }

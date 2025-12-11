@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { useRouter } from "next/navigation";
 
@@ -14,8 +14,25 @@ import {
   Users,
 } from "lucide-react";
 
+type DynamicKey =
+  | "ports"
+  | "incoterms"
+  | "status-codes"
+  | "currencies"
+  | "temp-presets";
+
+type PreviewMap = Partial<Record<DynamicKey, string[]>>;
+
 // ONLY THESE WILL BE DYNAMIC
-const dynamicSettings = [
+const dynamicSettings: {
+  key: DynamicKey;
+  title: string;
+  subtitle: string;
+  description: string;
+  icon: React.ReactNode;
+  iconBg: string;
+  iconColor: string;
+}[] = [
   {
     key: "ports",
     title: "Ports & Airports",
@@ -71,6 +88,7 @@ const SettingsCard = ({
   subtitle,
   description,
   onClick,
+  preview,
 }: any) => {
   return (
     <Card
@@ -87,6 +105,20 @@ const SettingsCard = ({
       </div>
 
       <p className="text-gray-600 text-sm flex-grow">{description}</p>
+
+      {/* Preview chips */}
+      {preview && preview.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1">
+          {preview.map((val: string) => (
+            <span
+              key={val}
+              className="px-2 py-0.5 rounded-full bg-gray-100 text-xs text-gray-700"
+            >
+              {val}
+            </span>
+          ))}
+        </div>
+      )}
     </Card>
   );
 };
@@ -94,11 +126,79 @@ const SettingsCard = ({
 export default function SettingsPage() {
   const router = useRouter();
 
+  const [previews, setPreviews] = useState<PreviewMap>({});
+  const [loadingPreviews, setLoadingPreviews] = useState(false);
+
+  useEffect(() => {
+    const loadPreviews = async () => {
+      try {
+        setLoadingPreviews(true);
+
+        const results = await Promise.all(
+          dynamicSettings.map(async (item) => {
+            try {
+              const res = await fetch(`/api/master-data/${item.key}`);
+              if (!res.ok) return { key: item.key, rows: [] as any[] };
+              const json = await res.json();
+              return {
+                key: item.key,
+                rows: Array.isArray(json) ? json : [],
+              };
+            } catch {
+              return { key: item.key, rows: [] as any[] };
+            }
+          })
+        );
+
+        const map: PreviewMap = {};
+
+        results.forEach(({ key, rows }) => {
+          // take last 5 items (latest), then show newest first
+          const latest = rows.slice(-5).reverse();
+
+          let values: string[] = [];
+
+          switch (key as DynamicKey) {
+            case "ports":
+            case "incoterms":
+            case "status-codes":
+              values = latest.map((r: any) => r.code).filter(Boolean);
+              break;
+            case "currencies":
+              values = latest.map((r: any) => r.currencyCode).filter(Boolean);
+              break;
+            case "temp-presets":
+              // no code field, so show name
+              values = latest.map((r: any) => r.name).filter(Boolean);
+              break;
+          }
+
+          map[key as DynamicKey] = values;
+        });
+
+        setPreviews(map);
+      } finally {
+        setLoadingPreviews(false);
+      }
+    };
+
+    loadPreviews();
+  }, []);
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Settings</h1>
-        <p className="text-gray-500">System configuration and master data</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Settings</h1>
+          <p className="text-gray-500">
+            System configuration and master data
+          </p>
+        </div>
+        {loadingPreviews && (
+          <span className="text-xs text-gray-400 animate-pulse">
+            Loading latest codes…
+          </span>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -113,7 +213,7 @@ export default function SettingsPage() {
           onClick={() => router.push("/settings/users")}
         />
 
-        {/* 🔥 DYNAMICALLY GENERATED CARDS */}
+        {/* 🔥 DYNAMICALLY GENERATED CARDS WITH PREVIEW */}
         {dynamicSettings.map((item) => (
           <SettingsCard
             key={item.key}
@@ -123,6 +223,7 @@ export default function SettingsPage() {
             title={item.title}
             subtitle={item.subtitle}
             description={item.description}
+            preview={previews[item.key]}
             onClick={() => router.push(`/settings/${item.key}`)}
           />
         ))}

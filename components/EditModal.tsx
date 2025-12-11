@@ -1,3 +1,4 @@
+// components/EditModal.tsx
 "use client";
 
 import React from "react";
@@ -23,7 +24,7 @@ export default function EditModal({
   values,
   onSave,
 }: EditModalProps) {
-  const [form, setForm] = React.useState(values || {});
+  const [form, setForm] = React.useState<any>(values || {});
 
   React.useEffect(() => {
     setForm(values || {});
@@ -38,24 +39,27 @@ export default function EditModal({
   };
 
   return (
-    <Dialog open={open} onOpenChange={() => onClose()}>
-      <DialogHeader>
-        <DialogTitle>Edit Entry</DialogTitle>
-      </DialogHeader>
+    <Dialog open={open} onOpenChange={onClose}>
       <DialogContent>
-        {fields.map((f) => (
-          <div key={f.key} className="space-y-1">
-            <label className="text-sm font-medium text-gray-700">
-              {f.label}
-            </label>
-            <input
-              type="text"
-              value={form[f.key] ?? ""}
-              onChange={(e) => handleChange(f.key, e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-        ))}
+        <DialogHeader>
+          <DialogTitle>Edit Entry</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          {fields.map((f) => (
+            <div key={f.key} className="space-y-1">
+              <label className="text-sm font-medium text-gray-700">
+                {f.label}
+              </label>
+              <input
+                type="text"
+                value={form[f.key] ?? ""}
+                onChange={(e) => handleChange(f.key, e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          ))}
+        </div>
 
         <div className="pt-4 flex justify-end gap-3">
           <button

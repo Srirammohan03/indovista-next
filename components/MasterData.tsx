@@ -1,3 +1,4 @@
+// components/MasterData.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -8,19 +9,23 @@ import {
   Trash2,
   ArrowLeft,
   Pencil,
-  Upload,
   ArrowUpDown,
   Globe,
   Ship,
   Clock,
   DollarSign,
   Thermometer,
+  Download,
 } from "lucide-react";
 import Link from "next/link";
 import EditModal from "@/components/EditModal";
 import AddEntryModal from "@/components/AddEntryModal";
-import BulkImportModal from "@/components/BulkImportModal";
 import Pagination from "@/components/Pagination";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 type MasterDataType =
   | "ports"
@@ -38,84 +43,93 @@ interface MasterDataProps {
   type: MasterDataType;
 }
 
+interface ColumnDef {
+  key: string;
+  label: string;
+}
+
+interface Config {
+  title: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  bg: string;
+  columns: ColumnDef[];
+}
+
 const PAGE_SIZE = 10;
 
+const configMap: Record<MasterDataType, Config> = {
+  ports: {
+    title: "Ports & Airports",
+    subtitle: "UN/LOCODE Database",
+    icon: <Globe className="w-6 h-6 text-blue-600" />,
+    bg: "bg-blue-50",
+    columns: [
+      { key: "code", label: "Code" },
+      { key: "city", label: "City" },
+      { key: "country", label: "Country" },
+    ],
+  },
+  incoterms: {
+    title: "Incoterms",
+    subtitle: "Incoterms 2020 Rules",
+    icon: <Ship className="w-6 h-6 text-green-600" />,
+    bg: "bg-green-50",
+    columns: [
+      { key: "code", label: "Code" },
+      { key: "name", label: "Name" },
+      { key: "type", label: "Type" },
+    ],
+  },
+  "status-codes": {
+    title: "Status Codes",
+    subtitle: "Shipment Tracking Milestones",
+    icon: <Clock className="w-6 h-6 text-orange-600" />,
+    bg: "bg-orange-50",
+    columns: [
+      { key: "code", label: "Code" },
+      { key: "description", label: "Description" },
+      { key: "stage", label: "Stage" },
+    ],
+  },
+  currencies: {
+    title: "Currencies",
+    subtitle: "Supported Exchange Rates",
+    icon: <DollarSign className="w-6 h-6 text-purple-600" />,
+    bg: "bg-purple-50",
+    columns: [
+      { key: "currencyCode", label: "Currency Code" },
+      { key: "name", label: "Name" },
+      { key: "exchangeRate", label: "Exch. Rate (to INR)" },
+    ],
+  },
+  "temp-presets": {
+    title: "Temperature Presets",
+    subtitle: "Cold Chain Configuration",
+    icon: <Thermometer className="w-6 h-6 text-cyan-600" />,
+    bg: "bg-cyan-50",
+    columns: [
+      { key: "name", label: "Preset Name" },
+      { key: "range", label: "Range" },
+      { key: "tolerance", label: "Tolerance" },
+    ],
+  },
+};
+
 const MasterData: React.FC<MasterDataProps> = ({ type }) => {
-  const [data, setData] = useState<MasterDataEntry[]>([]);
+  const queryClient = useQueryClient();
+
   const [searchTerm, setSearchTerm] = useState("");
-  const [loading, setLoading] = useState(false);
-
   const [editOpen, setEditOpen] = useState(false);
-  const [editItem, setEditItem] = useState<any>(null);
-
+  const [editItem, setEditItem] = useState<MasterDataEntry | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [bulkOpen, setBulkOpen] = useState(false);
-
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
-  const configMap = {
-    ports: {
-      title: "Ports & Airports",
-      subtitle: "UN/LOCODE Database",
-      icon: <Globe className="w-6 h-6 text-blue-600" />,
-      bg: "bg-blue-50",
-      columns: [
-        { key: "code", label: "Code" },
-        { key: "city", label: "City" },
-        { key: "country", label: "Country" },
-      ],
-    },
-    incoterms: {
-      title: "Incoterms",
-      subtitle: "Incoterms 2020 Rules",
-      icon: <Ship className="w-6 h-6 text-green-600" />,
-      bg: "bg-green-50",
-      columns: [
-        { key: "code", label: "Code" },
-        { key: "name", label: "Name" },
-        { key: "type", label: "Type" },
-      ],
-    },
-    "status-codes": {
-      title: "Status Codes",
-      subtitle: "Shipment Tracking Milestones",
-      icon: <Clock className="w-6 h-6 text-orange-600" />,
-      bg: "bg-orange-50",
-      columns: [
-        { key: "code", label: "Code" },
-        { key: "description", label: "Description" },
-        { key: "stage", label: "Stage" },
-      ],
-    },
-    currencies: {
-      title: "Currencies",
-      subtitle: "Supported Exchange Rates",
-      icon: <DollarSign className="w-6 h-6 text-purple-600" />,
-      bg: "bg-purple-50",
-      columns: [
-        { key: "currencyCode", label: "Currency Code" },
-        { key: "name", label: "Name" },
-        { key: "exchangeRate", label: "Exch. Rate (to INR)" },
-      ],
-    },
-    "temp-presets": {
-      title: "Temperature Presets",
-      subtitle: "Cold Chain Configuration",
-      icon: <Thermometer className="w-6 h-6 text-cyan-600" />,
-      bg: "bg-cyan-50",
-      columns: [
-        { key: "name", label: "Preset Name" },
-        { key: "range", label: "Range" },
-        { key: "tolerance", label: "Tolerance" },
-      ],
-    },
-  };
-
   const config = configMap[type];
 
-  // 🔹 helper: parse numeric fields
+  // 🔹 normalize numeric fields before sending to API
   const normalizeForType = (record: any) => {
     const copy: any = { ...record };
 
@@ -127,94 +141,101 @@ const MasterData: React.FC<MasterDataProps> = ({ type }) => {
     return copy;
   };
 
-  // 🔹 load data
-  useEffect(() => {
-    const load = async () => {
-      try {
-        setLoading(true);
-        const res = await fetch(`/api/master-data/${type}`);
-        const json = await res.json();
-        setData(Array.isArray(json) ? json : []);
-        setPage(1);
-      } catch (err) {
-        console.error(err);
-        setData([]);
-      } finally {
-        setLoading(false);
+  // 🔹 React Query – fetch master data
+  const {
+    data: records = [],
+    isLoading,
+    isFetching,
+  } = useQuery<MasterDataEntry[], Error>({
+    queryKey: ["master-data", type],
+    queryFn: async () => {
+      const res = await fetch(`/api/master-data/${type}`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to fetch master data");
       }
-    };
-    load();
-  }, [type]);
+      const json = await res.json();
+      return Array.isArray(json) ? json : [];
+    },
+  });
 
-  // 🔹 delete
-  const handleDelete = async (id: number) => {
-    if (!confirm("Delete this entry?")) return;
+  // 🔹 Mutations
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/master-data/${type}/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to delete");
+      }
+    },
+    onSuccess: (_data, id) => {
+      queryClient.setQueryData<MasterDataEntry[]>(
+        ["master-data", type],
+        (old = []) => old.filter((item) => item.id !== id)
+      );
+    },
+  });
 
-    await fetch(`/api/master-data/${type}/${id}`, {
-      method: "DELETE",
-    });
+  const editMutation = useMutation({
+    mutationFn: async (payload: { id: number; values: any }) => {
+      const { id, values } = payload;
+      const body = normalizeForType(values);
 
-    setData((prev) => prev.filter((item) => item.id !== id));
-  };
+      const res = await fetch(`/api/master-data/${type}/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-  // 🔹 open edit
-  const openEdit = (item: any) => {
-    setEditItem(item);
-    setEditOpen(true);
-  };
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to update");
+      }
 
-  // 🔹 save edit
-  const handleSaveEdit = async (updated: any) => {
-    const payload = normalizeForType(updated);
+      return (await res.json()) as MasterDataEntry;
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData<MasterDataEntry[]>(
+        ["master-data", type],
+        (old = []) => old.map((i) => (i.id === updated.id ? updated : i))
+      );
+      setEditOpen(false);
+      setEditItem(null);
+    },
+  });
 
-    const res = await fetch(`/api/master-data/${type}/${editItem.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+  const addMutation = useMutation({
+    mutationFn: async (values: any) => {
+      const body = normalizeForType(values);
 
-    const json = await res.json();
+      const res = await fetch(`/api/master-data/${type}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-    setData((prev) => prev.map((i) => (i.id === json.id ? json : i)));
-    setEditOpen(false);
-  };
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to create");
+      }
 
-  // 🔹 save add
-  const handleSaveAdd = async (values: any) => {
-    const payload = normalizeForType(values);
-
-    const res = await fetch(`/api/master-data/${type}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    const json = await res.json();
-    setData((prev) => [...prev, json]);
-    setAddOpen(false);
-  };
-
-  // 🔹 bulk save
-  const handleBulkSave = async (rows: any[]) => {
-    const normalized = rows.map(normalizeForType);
-
-    const res = await fetch(`/api/master-data/${type}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(normalized),
-    });
-
-    const json = await res.json();
-    const toAdd = Array.isArray(json) ? json : [];
-    setData((prev) => [...prev, ...toAdd]);
-    setBulkOpen(false);
-  };
+      return (await res.json()) as MasterDataEntry;
+    },
+    onSuccess: (created) => {
+      queryClient.setQueryData<MasterDataEntry[]>(
+        ["master-data", type],
+        (old = []) => [...old, created]
+      );
+      setAddOpen(false);
+    },
+  });
 
   // 🔹 search + sort + pagination
   const processed = useMemo(() => {
-    const base = Array.isArray(data) ? data : [];
+    const base = Array.isArray(records) ? records : [];
 
-    // Search filter
     const filtered = base.filter((item) =>
       Object.values(item).some((val) =>
         String(val ?? "")
@@ -223,7 +244,6 @@ const MasterData: React.FC<MasterDataProps> = ({ type }) => {
       )
     );
 
-    // Sorting
     let sorted = filtered;
     if (sortKey) {
       sorted = [...filtered].sort((a, b) => {
@@ -251,9 +271,9 @@ const MasterData: React.FC<MasterDataProps> = ({ type }) => {
     const paginated = sorted.slice(start, start + PAGE_SIZE);
 
     return { filtered: sorted, paginated, total, currentPage };
-  }, [data, searchTerm, sortKey, sortDir, page]);
+  }, [records, searchTerm, sortKey, sortDir, page]);
 
-  // Keep page in sync when data length changes
+  // keep page in range
   useEffect(() => {
     const totalPages = Math.max(1, Math.ceil(processed.total / PAGE_SIZE));
     if (page > totalPages) setPage(totalPages);
@@ -267,6 +287,65 @@ const MasterData: React.FC<MasterDataProps> = ({ type }) => {
       setSortDir("asc");
     }
   };
+
+  const handleDelete = (id: number) => {
+    if (!confirm("Delete this entry?")) return;
+    deleteMutation.mutate(id);
+  };
+
+  const openEdit = (item: MasterDataEntry) => {
+    setEditItem(item);
+    setEditOpen(true);
+  };
+
+  const handleSaveEdit = (updatedValues: any) => {
+    if (!editItem) return;
+    editMutation.mutate({ id: editItem.id, values: updatedValues });
+  };
+
+  const handleSaveAdd = (values: any) => {
+    addMutation.mutate(values);
+  };
+
+  const handleExport = () => {
+    const rows = processed.filtered;
+    if (!rows.length) {
+      alert("No records to export");
+      return;
+    }
+
+    const columns = config.columns.map((c) => c.key);
+    const header = config.columns.map((c) => c.label).join(",");
+
+    const csvRows = rows.map((item) =>
+      columns
+        .map((key) => {
+          const val = item[key];
+          if (val == null) return "";
+          const s = String(val).replace(/"/g, '""');
+          return /[",\n]/.test(s) ? `"${s}"` : s;
+        })
+        .join(",")
+    );
+
+    const csv = [header, ...csvRows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${type}-export.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const anyLoading =
+    isLoading ||
+    isFetching ||
+    deleteMutation.isPending ||
+    addMutation.isPending ||
+    editMutation.isPending;
 
   return (
     <>
@@ -283,12 +362,6 @@ const MasterData: React.FC<MasterDataProps> = ({ type }) => {
         onClose={() => setAddOpen(false)}
         fields={config.columns}
         onSave={handleSaveAdd}
-      />
-      <BulkImportModal
-        open={bulkOpen}
-        onClose={() => setBulkOpen(false)}
-        fields={config.columns}
-        onBulkSave={handleBulkSave}
       />
 
       <div className="space-y-6">
@@ -315,11 +388,11 @@ const MasterData: React.FC<MasterDataProps> = ({ type }) => {
 
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => setBulkOpen(true)}
-              className="inline-flex items-center px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+              onClick={handleExport}
+              className="inline-flex items-center px-3 py-2 text-sm rounded-lg border border-gray-300 text-white bg-green-600 hover:bg-green-400"
             >
-              <Upload className="w-4 h-4 mr-2" />
-              Bulk Import
+              <Download className="w-4 h-4 mr-2" />
+              Export CSV
             </button>
             <button
               onClick={() => setAddOpen(true)}
@@ -348,7 +421,7 @@ const MasterData: React.FC<MasterDataProps> = ({ type }) => {
                 className="w-full pl-9 pr-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            {loading && (
+            {anyLoading && (
               <span className="text-xs text-gray-400 animate-pulse">
                 Loading…
               </span>
@@ -420,7 +493,7 @@ const MasterData: React.FC<MasterDataProps> = ({ type }) => {
                   </tr>
                 ))}
 
-                {!processed.paginated.length && !loading && (
+                {!processed.paginated.length && !anyLoading && (
                   <tr>
                     <td
                       colSpan={config.columns.length + 1}

@@ -1,3 +1,4 @@
+// app/(dashboard)/customers/[code]/page.tsx
 "use client";
 
 import React, { useState } from "react";
@@ -30,7 +31,7 @@ const CustomerDetail = () => {
   const [deleting, setDeleting] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
 
-  // Shipment history for this customer (from mock for now)
+  // From mock for now; later replace with DB relation
   const customerShipments: Shipment[] = MOCK_SHIPMENTS.filter(
     (s) => (s as any).customerCode === code
   );
@@ -66,9 +67,9 @@ const CustomerDetail = () => {
     }
   };
 
-  // ✅ useQuery instead of useEffect
+  // ✅ React Query for fetching a single customer
   const {
-    data: customer, // this is your "payload"
+    data: customer,
     isLoading,
     isError,
     error,
@@ -78,11 +79,10 @@ const CustomerDetail = () => {
     queryFn: async () => {
       const res = await fetch(`/api/customers/${code}`);
       if (!res.ok) {
-        // try to read JSON error message if present
-        let message = `Failed to fetch customer (status ${res.status})`;
+        let message = `Failed to fetch customer (${res.status})`;
         try {
-          const body = await res.json();
-          if (body?.message) message = body.message;
+          const json = await res.json();
+          if (json?.message) message = json.message;
         } catch {
           // ignore
         }
@@ -106,9 +106,11 @@ const CustomerDetail = () => {
         method: "DELETE",
       });
       if (!res.ok) throw new Error("Failed to delete");
-      // clear cache for this customer + customers list
+
+      // clear caches
       queryClient.invalidateQueries({ queryKey: ["customers"] });
       queryClient.removeQueries({ queryKey: ["customer", code] });
+
       router.push("/customers");
     } catch (err) {
       console.error("Error deleting customer", err);
@@ -118,14 +120,12 @@ const CustomerDetail = () => {
     }
   };
 
-  // Loading state from React Query
   if (isLoading) {
     return (
       <div className="p-8 text-center text-gray-500">Loading customer...</div>
     );
   }
 
-  // Error / not found
   if (isError || !customer) {
     console.error(error);
     return (
@@ -198,7 +198,7 @@ const CustomerDetail = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column: Financials & Company Info */}
+          {/* Left Column */}
           <div className="lg:col-span-1 space-y-6">
             <Card>
               <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4 flex items-center gap-2">
@@ -393,7 +393,6 @@ const CustomerDetail = () => {
         onClose={() => setIsEditOpen(false)}
         customer={customer}
         onUpdated={(updated) => {
-          // update query payload in cache
           queryClient.setQueryData(["customer", code], updated);
           setIsEditOpen(false);
         }}

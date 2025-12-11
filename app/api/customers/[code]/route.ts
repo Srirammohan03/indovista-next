@@ -2,17 +2,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-type Params = { code: string };
-
-interface RouteContext {
-  params: Promise<Params>; // 👈 params is a Promise now
-}
+// In Next 16, `params` is a Promise -> we must `await` it
+type RouteContext = {
+  params: Promise<{ code: string }>;
+};
 
 // GET /api/customers/:code
-export async function GET(_req: NextRequest, { params }: RouteContext) {
+export async function GET(_req: NextRequest, context: RouteContext) {
   try {
-    // ✅ unwrap the promise first
-    const { code } = await params;
+    const { code } = await context.params;
 
     if (!code) {
       return NextResponse.json(
@@ -32,7 +30,6 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
       );
     }
 
-    // success payload = customer
     return NextResponse.json(customer);
   } catch (error) {
     console.error("[GET /api/customers/[code]] Error:", error);
@@ -44,9 +41,9 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
 }
 
 // PUT /api/customers/:code
-export async function PUT(req: NextRequest, { params }: RouteContext) {
+export async function PUT(req: NextRequest, context: RouteContext) {
   try {
-    const { code } = await params;
+    const { code } = await context.params;
 
     if (!code) {
       return NextResponse.json(
@@ -90,9 +87,9 @@ export async function PUT(req: NextRequest, { params }: RouteContext) {
 }
 
 // DELETE /api/customers/:code
-export async function DELETE(_req: NextRequest, { params }: RouteContext) {
+export async function DELETE(_req: NextRequest, context: RouteContext) {
   try {
-    const { code } = await params;
+    const { code } = await context.params;
 
     if (!code) {
       return NextResponse.json(

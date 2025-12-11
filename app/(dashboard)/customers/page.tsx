@@ -36,13 +36,12 @@ const CustomerList = () => {
     fetchCustomers();
   };
 
-  const formatCurrency = (amount: number, currency: string) => {
-    return new Intl.NumberFormat("en-US", {
+  const formatCurrency = (amount: number, currency: string) =>
+    new Intl.NumberFormat("en-US", {
       style: "currency",
       currency,
       maximumFractionDigits: 0,
     }).format(amount);
-  };
 
   const formatCustomerType = (type: Customer["type"]) => {
     switch (type) {
@@ -54,16 +53,6 @@ const CustomerList = () => {
         return type;
     }
   };
-
-  const filtered = customers.filter((c) => {
-    const term = searchTerm.toLowerCase();
-    return (
-      c.companyName.toLowerCase().includes(term) ||
-      c.country.toLowerCase().includes(term) ||
-      c.customerCode.toLowerCase().includes(term) ||
-      (c.contactPerson || "").toLowerCase().includes(term)
-    );
-  });
 
   const statusClass = (status: Customer["status"]) => {
     switch (status) {
@@ -78,11 +67,19 @@ const CustomerList = () => {
     }
   };
 
+  const filtered = customers.filter((c) => {
+    const term = searchTerm.toLowerCase();
+    return (
+      c.companyName.toLowerCase().includes(term) ||
+      c.country.toLowerCase().includes(term) ||
+      c.customerCode.toLowerCase().includes(term) ||
+      (c.contactPerson || "").toLowerCase().includes(term)
+    );
+  });
+
   return (
-    
     <div className="space-y-6">
       {/* Header */}
-      
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
@@ -90,58 +87,27 @@ const CustomerList = () => {
             Manage importers, distributors, and retail partners
           </p>
         </div>
+
         <div className="flex gap-2">
-  <button
-    onClick={() => {
-      window.location.href = "/api/customers/export";
-    }}
-    className="flex items-center px-3 py-2 border border-gray-300 text-sm rounded-lg hover:bg-gray-50"
-  >
-    Export All
-  </button>
+          {/* Export Excel */}
+          <button
+            onClick={() => {
+              window.location.href = "/api/customers/export";
+            }}
+            className="px-3 py-2 border bg-green-600 text-white border-gray-300 rounded-lg text-sm hover:bg-green-500"
+          >
+            Export
+          </button>
 
-  <label className="flex items-center px-3 py-2 border border-gray-300 text-sm rounded-lg hover:bg-gray-50 cursor-pointer">
-    Import
-    <input
-      type="file"
-      accept="application/json"
-      className="hidden"
-      onChange={async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        const text = await file.text();
-        try {
-          const json = JSON.parse(text);
-          const res = await fetch("/api/customers/import", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(json),
-          });
-          if (!res.ok) {
-            const err = await res.json();
-            alert(`Import failed: ${err.message || res.statusText}`);
-            return;
-          }
-          alert("Import successful");
-          // Refresh list
-          fetchCustomers(); // or refetch if using React Query
-        } catch (err) {
-          console.error(err);
-          alert("Invalid JSON file");
-        }
-      }}
-    />
-  </label>
-
-  <button
-    onClick={() => setIsModalOpen(true)}
-    className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 shadow-sm transition-colors"
-  >
-    <Plus className="w-4 h-4 mr-2" />
-    Add Customer
-  </button>
-</div>
-        
+          {/* Add customer */}
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 shadow-sm transition-colors"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Customer
+          </button>
+        </div>
       </div>
 
       <div className="space-y-6">
