@@ -229,7 +229,7 @@ export default function SettingsPage() {
         ))}
 
         {/* STATIC → DO NOT TOUCH */}
-        <SettingsCard
+        {/* <SettingsCard
           icon={<SettingsIcon className="w-6 h-6" />}
           iconBg="bg-gray-100"
           iconColor="text-gray-600"
@@ -237,7 +237,7 @@ export default function SettingsPage() {
           subtitle="System preferences"
           description="Timezone & locale settings."
           onClick={() => router.push("/settings/general")}
-        />
+        /> */}
       </div>
     </div>
   );

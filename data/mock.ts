@@ -143,7 +143,7 @@ export const MOCK_PRODUCTS: Product[] = [
     unitsPerCarton: 40,
     cartonsPerPallet: 40
   },
-  {
+  { 
     id: 'PROD-006',
     name: 'Cardamom Green - Premium',
     category: 'Whole Spices',

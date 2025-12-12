@@ -4,7 +4,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/Card";
-import { Search, Plus, CheckCircle, XCircle } from "lucide-react";
+import { Search, Plus, CheckCircle, XCircle, Download } from "lucide-react";
 import { AddCustomerModal } from "@/components/AddCustomerModal";
 import { Customer } from "@/types";
 
@@ -95,7 +95,8 @@ const CustomerList = () => {
               window.location.href = "/api/customers/export";
             }}
             className="px-3 py-2 border bg-green-600 text-white border-gray-300 rounded-lg text-sm hover:bg-green-500"
-          >
+          > 
+          <Download className="w-4 h-4 mr-2" />
             Export
           </button>
 

@@ -114,3 +114,24 @@ model Temperature {
   updatedAt  DateTime @updatedAt
 }
 
+enum StorageType {
+  AMBIENT
+  CHILLED
+  FROZEN
+}
+
+model Category {
+  id          String      @id                 // e.g. "CAT-001"
+  name        String
+  hsCode      String?
+  temperature String?
+  storageType StorageType @default(AMBIENT)
+  documents   String?
+  notes       String?
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([name])
+  @@map("categories")
+}

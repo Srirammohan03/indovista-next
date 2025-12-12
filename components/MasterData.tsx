@@ -392,7 +392,7 @@ const MasterData: React.FC<MasterDataProps> = ({ type }) => {
               className="inline-flex items-center px-3 py-2 text-sm rounded-lg border border-gray-300 text-white bg-green-600 hover:bg-green-400"
             >
               <Download className="w-4 h-4 mr-2" />
-              Export CSV
+              Export
             </button>
             <button
               onClick={() => setAddOpen(true)}
