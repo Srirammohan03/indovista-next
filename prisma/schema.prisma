@@ -11,7 +11,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  
 }
 
 
@@ -132,6 +131,36 @@ model Category {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
+   products    Product[]
+
   @@index([name])
   @@map("categories")
+}
+enum ProductType {
+  FROZEN
+  SPICE
+}
+
+model Product {
+  id             String      @id                 // e.g. "PROD-001"
+  name           String
+  type           ProductType
+
+  hsCode         String?
+  temperature    String?
+  packSize       String?
+  shelfLife      String?
+  unitsPerCarton Int?
+  cartonsPerPallet Int?
+  notes          String?
+
+  categoryId     String
+  category       Category    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([name])
+  @@index([categoryId])
+  @@map("products")
 }

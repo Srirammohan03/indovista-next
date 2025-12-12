@@ -211,12 +211,12 @@ const CategoryList = () => {
 
                   <td className="px-6 py-4 text-right">
                     {/* show always on mobile; hover-to-show on md+ */}
-                    <div className="flex items-center justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center justify-end gap-2 opacity-100  transition-opacity">
                       <button
                         type="button"
                         onClick={() => handleEdit(c)}
                         aria-label="Edit category"
-                        className="p-1.5 hover:bg-blue-50 rounded text-gray-400 hover:text-blue-600 transition-colors"
+                        className="p-1.5 hover:bg-blue-50 rounded text-blue-600 transition-colors"
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
@@ -225,7 +225,7 @@ const CategoryList = () => {
                         type="button"
                         onClick={() => handleDelete(c.id)}
                         aria-label="Delete category"
-                        className="p-1.5 hover:bg-red-50 rounded text-gray-400 hover:text-red-600 transition-colors"
+                        className="p-1.5 hover:bg-red-50 rounded text-red-600 transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>

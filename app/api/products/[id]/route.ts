@@ -1,0 +1,87 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+
+export const dynamic = "force-dynamic";
+
+type ProductType = "FROZEN" | "SPICE";
+function normalizeType(value: any): ProductType {
+  const v = String(value || "").toUpperCase();
+  return v === "SPICE" ? "SPICE" : "FROZEN";
+}
+
+type RouteContext = {
+  params: { id: string } | Promise<{ id: string }>;
+};
+
+export async function PUT(req: Request, context: RouteContext) {
+  const { id } = await Promise.resolve(context.params);
+
+  try {
+    const body = await req.json().catch(() => ({}));
+
+    if (!id) return NextResponse.json({ message: "Missing product id" }, { status: 400 });
+    if (!body?.name || typeof body.name !== "string") {
+      return NextResponse.json({ message: "Product name is required" }, { status: 400 });
+    }
+    if (!body?.categoryId || typeof body.categoryId !== "string") {
+      return NextResponse.json({ message: "categoryId is required" }, { status: 400 });
+    }
+
+    const category = await prisma.category.findUnique({
+      where: { id: body.categoryId },
+      select: { id: true },
+    });
+    if (!category) {
+      return NextResponse.json({ message: "Invalid categoryId" }, { status: 400 });
+    }
+
+    const updated = await prisma.product.update({
+      where: { id },
+      data: {
+        name: body.name,
+        type: normalizeType(body.type),
+
+        hsCode: body.hsCode || null,
+        temperature: body.temperature || null,
+        packSize: body.packSize || null,
+        shelfLife: body.shelfLife || null,
+
+        unitsPerCarton:
+          body.unitsPerCarton === "" || body.unitsPerCarton == null
+            ? null
+            : Number(body.unitsPerCarton),
+        cartonsPerPallet:
+          body.cartonsPerPallet === "" || body.cartonsPerPallet == null
+            ? null
+            : Number(body.cartonsPerPallet),
+
+        notes: body.notes || null,
+
+        categoryId: body.categoryId,
+      },
+      include: { category: { select: { id: true, name: true } } },
+    });
+
+    return NextResponse.json(updated);
+  } catch (error: any) {
+    console.error("[PUT /api/products/:id] Error:", error);
+    if (error?.code === "P2025") return NextResponse.json({ message: "Product not found" }, { status: 404 });
+    return NextResponse.json({ message: "Failed to update product" }, { status: 500 });
+  }
+}
+
+export async function DELETE(_req: Request, context: RouteContext) {
+  const { id } = await Promise.resolve(context.params);
+
+  try {
+    if (!id) return NextResponse.json({ message: "Missing product id" }, { status: 400 });
+
+    await prisma.product.delete({ where: { id } });
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error("[DELETE /api/products/:id] Error:", error);
+    if (error?.code === "P2025") return NextResponse.json({ message: "Product not found" }, { status: 404 });
+    return NextResponse.json({ message: "Failed to delete product" }, { status: 500 });
+  }
+}
