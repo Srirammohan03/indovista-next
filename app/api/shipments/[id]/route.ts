@@ -3,10 +3,12 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
+const clean = (v: any) => String(v ?? "").trim();
+const upper = (v: any, fallback: string) => clean(v || fallback).toUpperCase();
 const parseDate = (v?: string | null) => (v ? new Date(v) : null);
 
 const fallbackCode = (city?: string | null) => {
-  const c = (city || "").trim();
+  const c = clean(city);
   if (!c) return "---";
   return c.slice(0, 3).toUpperCase();
 };
@@ -30,13 +32,47 @@ function defaultDescriptionForStatus(s: any) {
   return `Status updated to ${String(s).replaceAll("_", " ").toLowerCase()}`;
 }
 
+/**
+ * Resolve currencyId from:
+ * 1) payload financials.currency (code or number)
+ * 2) customer.currency (code)
+ * 3) fallback "INR"
+ */
+async function resolveCurrencyId(customerId: string, payloadCurrency: any) {
+  let cur: any = payloadCurrency;
+
+  if (cur == null || cur === "") {
+    const c = await prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { currency: true },
+    });
+    cur = c?.currency || "INR";
+  }
+
+  if (typeof cur === "number") return cur;
+
+  const code = clean(cur).toUpperCase();
+  const row = await prisma.currency.findUnique({
+    where: { currencyCode: code },
+    select: { id: true },
+  });
+
+  if (!row) {
+    throw new Error(
+      `Currency '${code}' not found in Currency master. Add it in Currency table and try again.`
+    );
+  }
+
+  return row.id;
+}
+
 async function findShipmentRecord(idOrRef: string) {
   // 1) Try as String id
   try {
     const s = await prisma.shipment.findUnique({
       where: { id: idOrRef as any },
       include: {
-        customer: true,
+        customer: { select: { companyName: true, currency: true } },
         items: { include: { product: true } },
         documents: true,
         events: { orderBy: { timestamp: "desc" } },
@@ -47,13 +83,13 @@ async function findShipmentRecord(idOrRef: string) {
     // ignore and try other ways
   }
 
-  // 2) Try as Int id (if your Prisma id is Int)
+  // 2) Try as Int id (if Prisma id is Int)
   if (/^\d+$/.test(idOrRef)) {
     try {
       const s = await prisma.shipment.findUnique({
         where: { id: Number(idOrRef) as any },
         include: {
-          customer: true,
+          customer: { select: { companyName: true, currency: true } },
           items: { include: { product: true } },
           documents: true,
           events: { orderBy: { timestamp: "desc" } },
@@ -61,30 +97,26 @@ async function findShipmentRecord(idOrRef: string) {
       });
       if (s) return s;
     } catch {
-      // ignore and fallback
+      // ignore
     }
   }
 
-  // 3) Fallback: allow loading by reference (IMP-FZ-001 etc)
-  // NOTE: If your SHP-YYYY-001 is stored in a different field (shipmentId), add a query for it in your schema & here.
-  const byRef = await prisma.shipment.findFirst({
+  // 3) Fallback by reference
+  return prisma.shipment.findFirst({
     where: { reference: idOrRef },
     include: {
-      customer: true,
+      customer: { select: { companyName: true, currency: true } },
       items: { include: { product: true } },
       documents: true,
       events: { orderBy: { timestamp: "desc" } },
     },
   });
-
-  return byRef;
 }
 
 async function shapeShipment(idOrRef: string) {
   const s: any = await findShipmentRecord(idOrRef);
   if (!s) return null;
 
-  // Fetch relations by IDs safely (no fragile include relation names on Shipment)
   const [originPort, destPort, incoterm, containerType, temperature, currency, vehicle, driver] = await Promise.all([
     s.originPortId ? prisma.port.findUnique({ where: { id: s.originPortId } }) : Promise.resolve(null),
     s.destPortId ? prisma.port.findUnique({ where: { id: s.destPortId } }) : Promise.resolve(null),
@@ -93,7 +125,6 @@ async function shapeShipment(idOrRef: string) {
     s.temperatureId ? prisma.temperature.findUnique({ where: { id: s.temperatureId } }) : Promise.resolve(null),
     s.currencyId ? prisma.currency.findUnique({ where: { id: s.currencyId } }) : Promise.resolve(null),
 
-    // Vehicle (safe fetch)
     s.vehicleId
       ? prisma.vehicle.findUnique({
           where: { id: s.vehicleId },
@@ -101,7 +132,6 @@ async function shapeShipment(idOrRef: string) {
         })
       : Promise.resolve(null),
 
-    // Driver (safe fetch)
     s.driverId ? prisma.driver.findUnique({ where: { id: s.driverId } }) : Promise.resolve(null),
   ]);
 
@@ -110,15 +140,8 @@ async function shapeShipment(idOrRef: string) {
 
   return {
     id: s.id,
-    reference: s.reference,
-    masterDoc: s.masterDoc,
-    mode: s.mode,
-    direction: s.direction,
-    commodity: s.commodity,
-    status: s.status,
-    slaStatus: s.slaStatus,
-    etd: s.etd,
-    eta: s.eta,
+    reference: s.reference || "",
+    masterDoc: s.masterDoc || "",
 
     customer: s.customer?.companyName || "",
 
@@ -126,24 +149,46 @@ async function shapeShipment(idOrRef: string) {
       code: originCode,
       city: s.originCity || "",
       country: s.originCountry || "",
-      contact: s.originContact || null,
+      contact: s.originContact || "",
+      portId: s.originPortId || null,
     },
     destination: {
       code: destCode,
       city: s.destCity || "",
       country: s.destCountry || "",
-      contact: s.destContact || null,
+      contact: s.destContact || "",
+      portId: s.destPortId || null,
     },
 
-    incoterm: incoterm ? { code: (incoterm as any).code, name: (incoterm as any).name } : null,
-    containerType: containerType ? { code: (containerType as any).code, name: (containerType as any).name } : null,
+    mode: s.mode,
+    direction: s.direction,
+    commodity: s.commodity,
+
+    status: s.status,
+    slaStatus: s.slaStatus,
+
+    etd: s.etd ? s.etd.toISOString().slice(0, 10) : "",
+    eta: s.eta ? s.eta.toISOString().slice(0, 10) : "",
+
+    incoterm: incoterm
+      ? { id: (incoterm as any).id, code: (incoterm as any).code, name: (incoterm as any).name }
+      : null,
+
+    containerType: containerType
+      ? { id: (containerType as any).id, code: (containerType as any).code, name: (containerType as any).name }
+      : null,
+
     temperature: temperature
       ? {
+          id: (temperature as any).id,
+          name: (temperature as any).name,
+          range: (temperature as any).range,
+          tolerance: (temperature as any).tolerance,
           setPoint: (temperature as any).setPoint,
           unit: (temperature as any).unit,
-          range: (temperature as any).range,
+          alerts: 0,
         }
-      : null,
+      : { setPoint: 0, unit: "C", range: "", alerts: 0 },
 
     vehicle: vehicle
       ? {
@@ -151,47 +196,68 @@ async function shapeShipment(idOrRef: string) {
           name: (vehicle as any).name,
           number: (vehicle as any).number,
           transportMode: (vehicle as any).transportMode,
-          assignedDrivers: (((vehicle as any).drivers || []) as any[]).map((vd: any) => ({
-            id: vd.driver?.id,
-            name: vd.driver?.name,
-            role: vd.driver?.role,
-            contactNumber: vd.driver?.contactNumber,
-          })).filter(Boolean),
+          assignedDrivers: (((vehicle as any).drivers || []) as any[])
+            .map((vd: any) => vd?.driver)
+            .filter(Boolean)
+            .map((dr: any) => ({
+              id: dr.id,
+              name: dr.name,
+              role: dr.role,
+              contactNumber: dr.contactNumber ?? null,
+            })),
         }
       : null,
 
-    // If you assign driver directly on shipment
     driver: driver
       ? {
           id: (driver as any).id,
           name: (driver as any).name,
           role: (driver as any).role,
           transportMode: (driver as any).transportMode,
-          contactNumber: (driver as any).contactNumber,
-          licenseNumber: (driver as any).licenseNumber,
+          contactNumber: (driver as any).contactNumber ?? null,
+          licenseNumber: (driver as any).licenseNumber ?? null,
         }
       : null,
 
     cargo: (s.items || []).map((it: any) => ({
       id: it.id,
-      productName: it.product?.name || it.productName || "Product",
-      hsCode: it.product?.hsCode || it.hsCode || "",
+      productId: it.productId, // ✅ important for editing
+      productName: it.product?.name || "Product",
+      hsCode: it.product?.hsCode || "",
       quantity: it.quantity,
       unit: it.unit,
-      weightKg: it.weightKg,
-      tempReq: it.product?.tempReq || it.tempReq || "",
-      packaging: it.packaging,
+      weightKg: it.weightKg ?? 0,
+      tempReq: (it.product as any)?.temperature || (it.product as any)?.temperatureId || "N/A",
+      packaging: it.packaging || "",
     })),
 
-    documents: s.documents || [],
-    events: s.events || [],
+    documents: (s.documents || []).map((doc: any) => ({
+      id: doc.id,
+      name: doc.name,
+      type: doc.type,
+      status: doc.status,
+      uploadDate: doc.uploadedAt ? doc.uploadedAt.toISOString().slice(0, 10) : undefined,
+      expiryDate: doc.expiryDate ? doc.expiryDate.toISOString().slice(0, 10) : undefined,
+      fileUrl: doc.fileUrl,
+      mimeType: doc.mimeType,
+      fileSize: doc.fileSize,
+    })),
+
+    events: (s.events || []).map((e: any) => ({
+      id: e.id,
+      status: e.status,
+      timestamp: e.timestamp.toISOString().replace("T", " ").slice(0, 16),
+      location: e.location || "",
+      description: e.description || "",
+      user: e.user || "",
+    })),
 
     financials: {
-      currency: (currency as any)?.currencyCode || "INR",
+      currency: (currency as any)?.currencyCode || s.customer?.currency || "INR",
       revenue: s.revenue ?? 0,
       cost: s.cost ?? 0,
       margin: s.margin ?? (Number(s.revenue ?? 0) - Number(s.cost ?? 0)),
-      invoiceStatus: s.invoiceStatus || "",
+      invoiceStatus: s.invoiceStatus || "DRAFT",
     },
   };
 }
@@ -213,52 +279,135 @@ export async function PATCH(req: Request, ctx: { params: { id: string } }) {
   try {
     const body = await req.json();
 
-    // Load existing by id OR reference
     const existing: any = await findShipmentRecord(idOrRef);
     if (!existing) return new NextResponse("Not found", { status: 404 });
 
-    const id = existing.id; // real DB id (string/int)
+    const id = existing.id;
 
-    const mode = body.mode ?? existing.mode;
+    // effective values for validations
+    const nextMode = body.mode ? upper(body.mode, existing.mode) : existing.mode;
+    const nextCustomerId = body.customerId ? clean(body.customerId) : existing.customerId;
 
+    // validate vehicle/driver if provided
     if (body.vehicleId !== undefined && body.vehicleId) {
-      const v = await prisma.vehicle.findUnique({ where: { id: body.vehicleId } });
+      const v = await prisma.vehicle.findUnique({ where: { id: clean(body.vehicleId) } });
       if (!v) return new NextResponse("Invalid vehicleId", { status: 400 });
-      if ((v as any).transportMode !== mode) return new NextResponse("Vehicle mode mismatch", { status: 400 });
+      if (upper((v as any).transportMode, "") !== upper(nextMode, "")) {
+        return new NextResponse("Vehicle mode mismatch", { status: 400 });
+      }
     }
-
     if (body.driverId !== undefined && body.driverId) {
-      const d = await prisma.driver.findUnique({ where: { id: body.driverId } });
+      const d = await prisma.driver.findUnique({ where: { id: clean(body.driverId) } });
       if (!d) return new NextResponse("Invalid driverId", { status: 400 });
-      if ((d as any).transportMode !== mode) return new NextResponse("Driver mode mismatch", { status: 400 });
+      if (upper((d as any).transportMode, "") !== upper(nextMode, "")) {
+        return new NextResponse("Driver mode mismatch", { status: 400 });
+      }
     }
 
-    const statusChanged = body.status && body.status !== existing.status;
+    const data: any = {};
+
+    // basic fields
+    if (body.masterDoc !== undefined) data.masterDoc = clean(body.masterDoc) ? clean(body.masterDoc) : null;
+    if (body.direction !== undefined) data.direction = upper(body.direction, existing.direction);
+    if (body.mode !== undefined) data.mode = upper(body.mode, existing.mode);
+    if (body.commodity !== undefined) data.commodity = upper(body.commodity, existing.commodity);
+
+    if (body.customerId !== undefined) data.customerId = clean(body.customerId);
+
+    if (body.incotermId !== undefined)
+      data.incotermId = body.incotermId ? Number(body.incotermId) : null;
+    if (body.containerTypeId !== undefined)
+      data.containerTypeId = body.containerTypeId ? Number(body.containerTypeId) : null;
+    if (body.temperatureId !== undefined)
+      data.temperatureId = body.temperatureId ? Number(body.temperatureId) : null;
+
+    // origin/destination (support nested or flat)
+    if (body.origin) {
+      if (body.origin.city !== undefined) data.originCity = clean(body.origin.city);
+      if (body.origin.country !== undefined) data.originCountry = clean(body.origin.country);
+      if (body.origin.contact !== undefined) data.originContact = clean(body.origin.contact) ? clean(body.origin.contact) : null;
+      if (body.origin.portId !== undefined) data.originPortId = body.origin.portId ? Number(body.origin.portId) : null;
+    } else {
+      if (body.originCity !== undefined) data.originCity = clean(body.originCity);
+      if (body.originCountry !== undefined) data.originCountry = clean(body.originCountry);
+      if (body.originContact !== undefined) data.originContact = clean(body.originContact) ? clean(body.originContact) : null;
+      if (body.originPortId !== undefined) data.originPortId = body.originPortId ? Number(body.originPortId) : null;
+    }
+
+    if (body.destination) {
+      if (body.destination.city !== undefined) data.destCity = clean(body.destination.city);
+      if (body.destination.country !== undefined) data.destCountry = clean(body.destination.country);
+      if (body.destination.contact !== undefined) data.destContact = clean(body.destination.contact) ? clean(body.destination.contact) : null;
+      if (body.destination.portId !== undefined) data.destPortId = body.destination.portId ? Number(body.destination.portId) : null;
+    } else {
+      if (body.destCity !== undefined) data.destCity = clean(body.destCity);
+      if (body.destCountry !== undefined) data.destCountry = clean(body.destCountry);
+      if (body.destContact !== undefined) data.destContact = clean(body.destContact) ? clean(body.destContact) : null;
+      if (body.destPortId !== undefined) data.destPortId = body.destPortId ? Number(body.destPortId) : null;
+    }
+
+    // status/dates/sla
+    const nextStatus = body.status !== undefined ? upper(body.status, existing.status) : null;
+    const statusChanged = nextStatus != null && nextStatus !== existing.status;
+
+    if (body.status !== undefined) data.status = nextStatus;
+    if (body.etd !== undefined) data.etd = parseDate(body.etd);
+    if (body.eta !== undefined) data.eta = parseDate(body.eta);
+    if (body.slaStatus !== undefined) data.slaStatus = upper(body.slaStatus, existing.slaStatus);
+
+    // vehicle/driver assignment
+    if (body.vehicleId !== undefined) data.vehicleId = body.vehicleId ? clean(body.vehicleId) : null;
+    if (body.driverId !== undefined) data.driverId = body.driverId ? clean(body.driverId) : null;
+
+    // financials
+    if (body.financials) {
+      const revenue = Number(body.financials.revenue ?? 0) || 0;
+      const cost = Number(body.financials.cost ?? 0) || 0;
+      const margin = revenue - cost;
+
+      const currencyId = await resolveCurrencyId(nextCustomerId, body.financials.currency);
+
+      data.currencyId = currencyId;
+      data.revenue = revenue;
+      data.cost = cost;
+      data.margin = margin;
+
+      if (body.financials.invoiceStatus !== undefined) {
+        data.invoiceStatus = upper(body.financials.invoiceStatus, existing.invoiceStatus || "DRAFT");
+      }
+    }
+
+    // cargo replace
+    if (Array.isArray(body.items)) {
+      data.items = {
+        deleteMany: {},
+        create: body.items
+          .filter((it: any) => it?.productId)
+          .map((it: any) => ({
+            productId: it.productId,
+            quantity: Number(it.quantity || 0),
+            unit: clean(it.unit) || "Unit",
+            weightKg: it.weightKg != null ? Number(it.weightKg) : null,
+            packaging: clean(it.packaging) ? clean(it.packaging) : null,
+          })),
+      };
+    }
+
+    // timeline event on status change
+    if (statusChanged) {
+      data.events = {
+        create: {
+          status: nextStatus,
+          location: body.location || defaultLocationForStatus(nextStatus, existing),
+          description: body.description || defaultDescriptionForStatus(nextStatus),
+          user: body.user || "System",
+        },
+      };
+    }
 
     await prisma.shipment.update({
       where: { id },
-      data: {
-        status: body.status ?? undefined,
-        etd: body.etd !== undefined ? parseDate(body.etd) : undefined,
-        eta: body.eta !== undefined ? parseDate(body.eta) : undefined,
-        slaStatus: body.slaStatus ?? undefined,
-
-        vehicleId: body.vehicleId !== undefined ? (body.vehicleId || null) : undefined,
-        driverId: body.driverId !== undefined ? (body.driverId || null) : undefined,
-
-        ...(statusChanged
-          ? {
-              events: {
-                create: {
-                  status: body.status,
-                  location: body.location || defaultLocationForStatus(body.status, existing),
-                  description: body.description || defaultDescriptionForStatus(body.status),
-                  user: body.user || "System",
-                },
-              },
-            }
-          : {}),
-      },
+      data,
     });
 
     const shipment = await shapeShipment(String(id));

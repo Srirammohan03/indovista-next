@@ -21,7 +21,7 @@ const LoginPage = () => {
 
     if (success) {
       // ✅ You already have /vehicles working
-      router.push("/vehicles");
+      router.push("/dashboard");
     } else {
       setError("Invalid loginId/email or password");
     }
