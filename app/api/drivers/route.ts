@@ -36,15 +36,33 @@ export async function GET(req: Request) {
 
     const rows = await prisma.driver.findMany({
       where: mode ? { transportMode: normalizeMode(mode) } : undefined,
-      include: {
-        vehicles: { include: { vehicle: true } },
-      },
-      orderBy: { createdAt: "desc" },
+      include: { vehicles: { include: { vehicle: true } } },
+      orderBy: { updatedAt: "desc" },
     });
 
     const shaped = rows.map((d) => ({
-      ...d,
-      assignedVehicles: d.vehicles.map((x) => x.vehicle),
+      id: d.id,
+      name: d.name,
+      age: d.age,
+      role: d.role,
+      profession: d.profession,
+      education: d.education,
+      languages: d.languages,
+      licenseNumber: d.licenseNumber,
+      contactNumber: d.contactNumber,
+      email: d.email,
+      address: d.address,
+      transportMode: d.transportMode,
+      medicalCondition: d.medicalCondition,
+      notes: d.notes,
+      assignedVehicles: (d.vehicles || []).map((x) => ({
+        id: x.vehicle.id,
+        name: x.vehicle.name,
+        number: x.vehicle.number,
+        transportMode: x.vehicle.transportMode,
+        ownership: x.vehicle.ownership,
+        fuel: x.vehicle.fuel,
+      })),
     }));
 
     return NextResponse.json(shaped);
@@ -57,19 +75,42 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
 
-    if (!body?.name) return NextResponse.json({ message: "Driver name is required" }, { status: 400 });
+    const name = String(body?.name || "").trim();
+    if (!name) return NextResponse.json({ message: "Driver name is required" }, { status: 400 });
 
-    const id = typeof body.id === "string" && body.id.trim() ? body.id.trim() : await generateDriverId();
+    const id =
+      typeof body.id === "string" && body.id.trim() ? body.id.trim() : await generateDriverId();
+
     const transportMode = normalizeMode(body.transportMode);
     const role = normalizeRole(body.role);
 
     const vehicleIds: string[] = Array.isArray(body.vehicleIds) ? body.vehicleIds : [];
 
+    // ✅ Validate vehicles exist + mode matches
+    if (vehicleIds.length) {
+      const vehicles = await prisma.vehicle.findMany({
+        where: { id: { in: vehicleIds } },
+        select: { id: true, transportMode: true },
+      });
+
+      if (vehicles.length !== vehicleIds.length) {
+        return NextResponse.json({ message: "One or more vehicleIds are invalid" }, { status: 400 });
+      }
+
+      const bad = vehicles.find((v) => v.transportMode !== transportMode);
+      if (bad) {
+        return NextResponse.json(
+          { message: "One or more selected vehicles do not match the driver transport mode" },
+          { status: 400 }
+        );
+      }
+    }
+
     const created = await prisma.$transaction(async (tx) => {
       const d = await tx.driver.create({
         data: {
           id,
-          name: body.name,
+          name,
           age: body.age == null || body.age === "" ? null : Number(body.age),
           role,
 

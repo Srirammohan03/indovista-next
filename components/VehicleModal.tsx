@@ -8,7 +8,7 @@ import type { Driver } from "@/types/driver";
 type Props = {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (payload: any) => void;
+  onSave: (payload: any) => Promise<any>; // ✅ important (we await it)
   initialData: Vehicle | null;
   drivers: Driver[];
   enabledModes: TransportMode[];
@@ -27,7 +27,6 @@ export function VehicleModal({ isOpen, onClose, onSave, initialData, drivers, en
     name: initialData?.name ?? "",
     number: initialData?.number ?? "",
     ownership: (initialData?.ownership ?? "OWN") as VehicleOwnership,
-
     transportMode: (initialData?.transportMode ?? enabledModes?.[0] ?? "ROAD") as TransportMode,
 
     engineType: initialData?.engineType ?? "",
@@ -51,15 +50,14 @@ export function VehicleModal({ isOpen, onClose, onSave, initialData, drivers, en
     driverIds: (initialData?.assignedDrivers ?? []).map((d: any) => d.id),
   }));
 
-  // when opening new/editing, re-init
   React.useEffect(() => {
     if (!isOpen) return;
+
     setForm({
       id: initialData?.id ?? "",
       name: initialData?.name ?? "",
       number: initialData?.number ?? "",
       ownership: (initialData?.ownership ?? "OWN") as VehicleOwnership,
-
       transportMode: (initialData?.transportMode ?? enabledModes?.[0] ?? "ROAD") as TransportMode,
 
       engineType: initialData?.engineType ?? "",
@@ -93,24 +91,44 @@ export function VehicleModal({ isOpen, onClose, onSave, initialData, drivers, en
   const toggleDriver = (id: string) => {
     setForm((p: any) => {
       const exists = p.driverIds.includes(id);
-      return { ...p, driverIds: exists ? p.driverIds.filter((x: string) => x !== id) : [...p.driverIds, id] };
+      return {
+        ...p,
+        driverIds: exists ? p.driverIds.filter((x: string) => x !== id) : [...p.driverIds, id],
+      };
     });
   };
 
   const save = async () => {
+    if (saving) return;
+
+    const name = String(form.name || "").trim();
+    const number = String(form.number || "").trim().toUpperCase();
+
+    if (!name) {
+      alert("Vehicle name is required");
+      return;
+    }
+    if (!number) {
+      alert("Vehicle number is required");
+      return;
+    }
+    if (form.fuel === "OTHER" && !String(form.fuelOther || "").trim()) {
+      alert("Fuel Other is required when Fuel is OTHER");
+      return;
+    }
+
     setSaving(true);
     try {
       const payload = {
-        ...(form.id ? { id: form.id } : {}),
-        name: form.name,
-        number: form.number,
+        ...(String(form.id || "").trim() ? { id: String(form.id).trim() } : {}),
+        name,
+        number,
         ownership: form.ownership,
-
         transportMode: form.transportMode,
 
         engineType: form.engineType || null,
         fuel: form.fuel,
-        fuelOther: form.fuel === "OTHER" ? (form.fuelOther || null) : null,
+        fuelOther: form.fuel === "OTHER" ? form.fuelOther || null : null,
         fuelCapacity: form.fuelCapacity === "" ? null : Number(form.fuelCapacity),
         loadingCapacity: form.loadingCapacity === "" ? null : Number(form.loadingCapacity),
 
@@ -129,7 +147,9 @@ export function VehicleModal({ isOpen, onClose, onSave, initialData, drivers, en
         driverIds: form.driverIds || [],
       };
 
-      await onSave(payload);
+      await onSave(payload); // ✅ now actually waits
+    } catch {
+      // errors are already alerted by mutation onError
     } finally {
       setSaving(false);
     }
@@ -149,7 +169,6 @@ export function VehicleModal({ isOpen, onClose, onSave, initialData, drivers, en
         </div>
 
         <div className="p-6 space-y-6">
-          {/* Top row */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Transport Mode</label>
@@ -158,8 +177,10 @@ export function VehicleModal({ isOpen, onClose, onSave, initialData, drivers, en
                 value={form.transportMode}
                 onChange={(e) => setForm((p: any) => ({ ...p, transportMode: e.target.value, driverIds: [] }))}
               >
-                {enabledModes.map((m) => (
-                  <option key={m} value={m}>{m}</option>
+                {(enabledModes?.length ? enabledModes : (["ROAD", "SEA", "AIR"] as TransportMode[])).map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
                 ))}
               </select>
             </div>
@@ -172,7 +193,9 @@ export function VehicleModal({ isOpen, onClose, onSave, initialData, drivers, en
                 onChange={(e) => setForm((p: any) => ({ ...p, ownership: e.target.value }))}
               >
                 {ownershipOptions.map((o) => (
-                  <option key={o} value={o}>{o}</option>
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
                 ))}
               </select>
             </div>
@@ -188,7 +211,6 @@ export function VehicleModal({ isOpen, onClose, onSave, initialData, drivers, en
             </div>
           </div>
 
-          {/* Vehicle identity */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Vehicle Name</label>
@@ -210,7 +232,6 @@ export function VehicleModal({ isOpen, onClose, onSave, initialData, drivers, en
             </div>
           </div>
 
-          {/* Fuel */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Fuel</label>
@@ -220,7 +241,9 @@ export function VehicleModal({ isOpen, onClose, onSave, initialData, drivers, en
                 onChange={(e) => setForm((p: any) => ({ ...p, fuel: e.target.value }))}
               >
                 {fuelOptions.map((f) => (
-                  <option key={f} value={f}>{f}</option>
+                  <option key={f} value={f}>
+                    {f}
+                  </option>
                 ))}
               </select>
             </div>
@@ -257,7 +280,6 @@ export function VehicleModal({ isOpen, onClose, onSave, initialData, drivers, en
             </div>
           </div>
 
-          {/* Docs / Dates */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">RC Number</label>
@@ -287,7 +309,6 @@ export function VehicleModal({ isOpen, onClose, onSave, initialData, drivers, en
             </div>
           </div>
 
-          {/* Registered */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
             <div className="flex items-center gap-3">
               <input
@@ -296,7 +317,9 @@ export function VehicleModal({ isOpen, onClose, onSave, initialData, drivers, en
                 checked={!!form.isRegistered}
                 onChange={(e) => setForm((p: any) => ({ ...p, isRegistered: e.target.checked }))}
               />
-              <label htmlFor="reg" className="text-sm font-semibold text-gray-700">Registered?</label>
+              <label htmlFor="reg" className="text-sm font-semibold text-gray-700">
+                Registered?
+              </label>
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Registered Date</label>
@@ -309,7 +332,6 @@ export function VehicleModal({ isOpen, onClose, onSave, initialData, drivers, en
             </div>
           </div>
 
-          {/* Managing / medical / docs */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Managing Vehicle</label>
@@ -340,7 +362,6 @@ export function VehicleModal({ isOpen, onClose, onSave, initialData, drivers, en
             </div>
           </div>
 
-          {/* Assign drivers */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Assigned Drivers (same mode)</label>
             <div className="border border-gray-200 rounded-lg p-3 max-h-[180px] overflow-auto bg-gray-50">
@@ -361,7 +382,6 @@ export function VehicleModal({ isOpen, onClose, onSave, initialData, drivers, en
             </div>
           </div>
 
-          {/* Notes */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1">Notes</label>
             <textarea

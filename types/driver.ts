@@ -1,4 +1,7 @@
-export type TransportMode = "ROAD" | "SEA" | "AIR";
+import type { TransportMode } from "./transport";
+
+export type { TransportMode };
+
 export type DriverRole = "DRIVER" | "OPERATOR";
 
 export type VehicleMini = {

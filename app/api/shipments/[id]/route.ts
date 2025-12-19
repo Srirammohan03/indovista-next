@@ -1,269 +1,285 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import fs from "fs/promises";
-import path from "path";
 
-type Ctx = { params: { id: string } | Promise<{ id: string }> };
+export const dynamic = "force-dynamic";
 
-const d = (v: any) => (v ? new Date(v) : null);
+const parseDate = (v?: string | null) => (v ? new Date(v) : null);
 
-/**
- * Resolve currencyId from:
- * 1) payload financials.currency (code or number)
- * 2) customer.currency (code)
- * 3) fallback "INR"
- */
-async function resolveCurrencyId(customerId: string, payloadCurrency: any) {
-  let cur: any = payloadCurrency;
+const fallbackCode = (city?: string | null) => {
+  const c = (city || "").trim();
+  if (!c) return "---";
+  return c.slice(0, 3).toUpperCase();
+};
 
-  if (cur == null || cur === "") {
-    const c = await prisma.customer.findUnique({
-      where: { id: customerId },
-      select: { currency: true },
-    });
-    cur = c?.currency || "INR";
-  }
-
-  if (typeof cur === "number") return cur;
-
-  const code = String(cur).trim().toUpperCase();
-  const row = await prisma.currency.findUnique({
-    where: { currencyCode: code },
-    select: { id: true },
-  });
-
-  if (!row) {
-    throw new Error(
-      `Currency '${code}' not found in Currency master. Add it in Currency table and try again.`
-    );
-  }
-
-  return row.id;
+function defaultLocationForStatus(s: any, shipment: any) {
+  const originStages = [
+    "BOOKED",
+    "PICKED_UP",
+    "IN_TRANSIT_ORIGIN",
+    "AT_PORT_ORIGIN",
+    "CUSTOMS_EXPORT",
+    "ON_VESSEL",
+  ];
+  const isOrigin = originStages.includes(String(s));
+  const city = isOrigin ? shipment.originCity : shipment.destCity;
+  const country = isOrigin ? shipment.originCountry : shipment.destCountry;
+  return city && country ? `${city}, ${country}` : isOrigin ? "Origin" : "Destination";
 }
 
-export async function GET(_req: Request, { params }: Ctx) {
-  const { id } = await params;
+function defaultDescriptionForStatus(s: any) {
+  return `Status updated to ${String(s).replaceAll("_", " ").toLowerCase()}`;
+}
 
-  if (!id) return new NextResponse("Missing shipment id", { status: 400 });
+async function findShipmentRecord(idOrRef: string) {
+  // 1) Try as String id
+  try {
+    const s = await prisma.shipment.findUnique({
+      where: { id: idOrRef as any },
+      include: {
+        customer: true,
+        items: { include: { product: true } },
+        documents: true,
+        events: { orderBy: { timestamp: "desc" } },
+      },
+    });
+    if (s) return s;
+  } catch {
+    // ignore and try other ways
+  }
 
-  const s = await prisma.shipment.findUnique({
-    where: { id },
+  // 2) Try as Int id (if your Prisma id is Int)
+  if (/^\d+$/.test(idOrRef)) {
+    try {
+      const s = await prisma.shipment.findUnique({
+        where: { id: Number(idOrRef) as any },
+        include: {
+          customer: true,
+          items: { include: { product: true } },
+          documents: true,
+          events: { orderBy: { timestamp: "desc" } },
+        },
+      });
+      if (s) return s;
+    } catch {
+      // ignore and fallback
+    }
+  }
+
+  // 3) Fallback: allow loading by reference (IMP-FZ-001 etc)
+  // NOTE: If your SHP-YYYY-001 is stored in a different field (shipmentId), add a query for it in your schema & here.
+  const byRef = await prisma.shipment.findFirst({
+    where: { reference: idOrRef },
     include: {
-      customer: { select: { companyName: true, currency: true } },
-      incoterm: true,
-      originPort: true,
-      destPort: true,
-      containerType: true,
-      temperature: true,
-      currency: true,
+      customer: true,
       items: { include: { product: true } },
       documents: true,
       events: { orderBy: { timestamp: "desc" } },
     },
   });
 
-  if (!s) return new NextResponse("Not found", { status: 404 });
+  return byRef;
+}
 
-  return NextResponse.json({
+async function shapeShipment(idOrRef: string) {
+  const s: any = await findShipmentRecord(idOrRef);
+  if (!s) return null;
+
+  // Fetch relations by IDs safely (no fragile include relation names on Shipment)
+  const [originPort, destPort, incoterm, containerType, temperature, currency, vehicle, driver] = await Promise.all([
+    s.originPortId ? prisma.port.findUnique({ where: { id: s.originPortId } }) : Promise.resolve(null),
+    s.destPortId ? prisma.port.findUnique({ where: { id: s.destPortId } }) : Promise.resolve(null),
+    s.incotermId ? prisma.incoterm.findUnique({ where: { id: s.incotermId } }) : Promise.resolve(null),
+    s.containerTypeId ? prisma.containerType.findUnique({ where: { id: s.containerTypeId } }) : Promise.resolve(null),
+    s.temperatureId ? prisma.temperature.findUnique({ where: { id: s.temperatureId } }) : Promise.resolve(null),
+    s.currencyId ? prisma.currency.findUnique({ where: { id: s.currencyId } }) : Promise.resolve(null),
+
+    // Vehicle (safe fetch)
+    s.vehicleId
+      ? prisma.vehicle.findUnique({
+          where: { id: s.vehicleId },
+          include: { drivers: { include: { driver: true } } },
+        })
+      : Promise.resolve(null),
+
+    // Driver (safe fetch)
+    s.driverId ? prisma.driver.findUnique({ where: { id: s.driverId } }) : Promise.resolve(null),
+  ]);
+
+  const originCode = (originPort as any)?.code || fallbackCode(s.originCity);
+  const destCode = (destPort as any)?.code || fallbackCode(s.destCity);
+
+  return {
     id: s.id,
     reference: s.reference,
-    masterDoc: s.masterDoc || "",
-    customer: s.customer.companyName,
-    origin: {
-      code: s.originPort?.code || "N/A",
-      city: s.originCity,
-      country: s.originCountry,
-      contact: s.originContact || "",
-      portId: s.originPortId || null,
-    },
-    destination: {
-      code: s.destPort?.code || "N/A",
-      city: s.destCity,
-      country: s.destCountry,
-      contact: s.destContact || "",
-      portId: s.destPortId || null,
-    },
+    masterDoc: s.masterDoc,
     mode: s.mode,
     direction: s.direction,
     commodity: s.commodity,
     status: s.status,
     slaStatus: s.slaStatus,
-    etd: s.etd ? s.etd.toISOString().slice(0, 10) : "",
-    eta: s.eta ? s.eta.toISOString().slice(0, 10) : "",
-    incoterm: s.incoterm
-      ? { id: s.incoterm.id, code: s.incoterm.code, name: s.incoterm.name, type: s.incoterm.type }
-      : null,
-    containerType: s.containerType
-      ? { id: s.containerType.id, code: s.containerType.code, name: s.containerType.name }
-      : null,
-    temperature: s.temperature
-      ? {
-          id: s.temperature.id,
-          name: s.temperature.name,
-          range: s.temperature.range,
-          tolerance: s.temperature.tolerance,
-          setPoint: s.temperature.setPoint,
-          unit: s.temperature.unit,
-          alerts: 0,
-        }
-      : { setPoint: 0, unit: "C", range: "", alerts: 0 },
+    etd: s.etd,
+    eta: s.eta,
 
-    // add productId for editing cargo
-    cargo: s.items.map((it) => ({
+    customer: s.customer?.companyName || "",
+
+    origin: {
+      code: originCode,
+      city: s.originCity || "",
+      country: s.originCountry || "",
+      contact: s.originContact || null,
+    },
+    destination: {
+      code: destCode,
+      city: s.destCity || "",
+      country: s.destCountry || "",
+      contact: s.destContact || null,
+    },
+
+    incoterm: incoterm ? { code: (incoterm as any).code, name: (incoterm as any).name } : null,
+    containerType: containerType ? { code: (containerType as any).code, name: (containerType as any).name } : null,
+    temperature: temperature
+      ? {
+          setPoint: (temperature as any).setPoint,
+          unit: (temperature as any).unit,
+          range: (temperature as any).range,
+        }
+      : null,
+
+    vehicle: vehicle
+      ? {
+          id: (vehicle as any).id,
+          name: (vehicle as any).name,
+          number: (vehicle as any).number,
+          transportMode: (vehicle as any).transportMode,
+          assignedDrivers: (((vehicle as any).drivers || []) as any[]).map((vd: any) => ({
+            id: vd.driver?.id,
+            name: vd.driver?.name,
+            role: vd.driver?.role,
+            contactNumber: vd.driver?.contactNumber,
+          })).filter(Boolean),
+        }
+      : null,
+
+    // If you assign driver directly on shipment
+    driver: driver
+      ? {
+          id: (driver as any).id,
+          name: (driver as any).name,
+          role: (driver as any).role,
+          transportMode: (driver as any).transportMode,
+          contactNumber: (driver as any).contactNumber,
+          licenseNumber: (driver as any).licenseNumber,
+        }
+      : null,
+
+    cargo: (s.items || []).map((it: any) => ({
       id: it.id,
-      productId: it.productId,
-      productName: it.product.name,
-      hsCode: it.product.hsCode || "",
+      productName: it.product?.name || it.productName || "Product",
+      hsCode: it.product?.hsCode || it.hsCode || "",
       quantity: it.quantity,
       unit: it.unit,
-      weightKg: it.weightKg || 0,
-      tempReq: it.product.temperatureId || "N/A",
-      packaging: it.packaging || "",
+      weightKg: it.weightKg,
+      tempReq: it.product?.tempReq || it.tempReq || "",
+      packaging: it.packaging,
     })),
 
-    documents: s.documents.map((doc) => ({
-      id: doc.id,
-      name: doc.name,
-      type: doc.type,
-      status: doc.status,
-      uploadDate: doc.uploadedAt ? doc.uploadedAt.toISOString().slice(0, 10) : undefined,
-      expiryDate: doc.expiryDate ? doc.expiryDate.toISOString().slice(0, 10) : undefined,
-      fileUrl: doc.fileUrl,
-      mimeType: doc.mimeType,
-      fileSize: doc.fileSize,
-    })),
-
-    events: s.events.map((e) => ({
-      id: e.id,
-      status: e.status,
-      timestamp: e.timestamp.toISOString().replace("T", " ").slice(0, 16),
-      location: e.location || "",
-      description: e.description || "",
-      user: e.user || "",
-    })),
+    documents: s.documents || [],
+    events: s.events || [],
 
     financials: {
-      currency: s.currency?.currencyCode || s.customer.currency || "INR",
-      revenue: s.revenue,
-      cost: s.cost,
-      margin: s.margin,
-      invoiceStatus: s.invoiceStatus,
+      currency: (currency as any)?.currencyCode || "INR",
+      revenue: s.revenue ?? 0,
+      cost: s.cost ?? 0,
+      margin: s.margin ?? (Number(s.revenue ?? 0) - Number(s.cost ?? 0)),
+      invoiceStatus: s.invoiceStatus || "",
     },
-  });
+  };
 }
 
-/**
- * PATCH = partial update (edit shipment, edit cargo, edit financials, etc.)
- */
-export async function PATCH(req: Request, { params }: Ctx) {
+export async function GET(_: Request, ctx: { params: { id: string } }) {
   try {
-    const { id } = await params;
-    if (!id) return new NextResponse("Missing shipment id", { status: 400 });
-
-    const body = await req.json();
-
-    const data: any = {};
-
-    // Basic fields
-    if (body.masterDoc !== undefined) data.masterDoc = body.masterDoc || null;
-    if (body.direction !== undefined) data.direction = body.direction;
-    if (body.mode !== undefined) data.mode = body.mode;
-    if (body.commodity !== undefined) data.commodity = body.commodity;
-
-    if (body.customerId !== undefined) data.customerId = body.customerId;
-
-    if (body.incotermId !== undefined) data.incotermId = body.incotermId ? Number(body.incotermId) : null;
-    if (body.containerTypeId !== undefined) data.containerTypeId = body.containerTypeId ? Number(body.containerTypeId) : null;
-    if (body.temperatureId !== undefined) data.temperatureId = body.temperatureId ? Number(body.temperatureId) : null;
-
-    // Origin / Destination
-    if (body.origin) {
-      if (body.origin.city !== undefined) data.originCity = body.origin.city;
-      if (body.origin.country !== undefined) data.originCountry = body.origin.country;
-      if (body.origin.contact !== undefined) data.originContact = body.origin.contact || null;
-      if (body.origin.portId !== undefined) data.originPortId = body.origin.portId ? Number(body.origin.portId) : null;
-    }
-
-    if (body.destination) {
-      if (body.destination.city !== undefined) data.destCity = body.destination.city;
-      if (body.destination.country !== undefined) data.destCountry = body.destination.country;
-      if (body.destination.contact !== undefined) data.destContact = body.destination.contact || null;
-      if (body.destination.portId !== undefined) data.destPortId = body.destination.portId ? Number(body.destination.portId) : null;
-    }
-
-    // Status / dates / SLA
-    if (body.status !== undefined) data.status = body.status;
-    if (body.etd !== undefined) data.etd = d(body.etd);
-    if (body.eta !== undefined) data.eta = d(body.eta);
-    if (body.slaStatus !== undefined) data.slaStatus = body.slaStatus;
-
-    // Financials
-    if (body.financials) {
-      const existing = await prisma.shipment.findUnique({
-        where: { id },
-        select: { customerId: true },
-      });
-      if (!existing) return new NextResponse("Not found", { status: 404 });
-
-      const revenue = Number(body.financials.revenue ?? 0) || 0;
-      const cost = Number(body.financials.cost ?? 0) || 0;
-      const margin = revenue - cost;
-
-      const currencyId = await resolveCurrencyId(existing.customerId, body.financials.currency);
-
-      data.currencyId = currencyId;
-      data.revenue = revenue;
-      data.cost = cost;
-      data.margin = margin;
-      if (body.financials.invoiceStatus !== undefined) data.invoiceStatus = body.financials.invoiceStatus;
-    }
-
-    // Cargo items (replace)
-    if (Array.isArray(body.items)) {
-      data.items = {
-        deleteMany: {},
-        create: body.items
-          .filter((it: any) => it.productId)
-          .map((it: any) => ({
-            productId: it.productId,
-            quantity: Number(it.quantity || 0),
-            unit: it.unit || "Unit",
-            weightKg: it.weightKg != null ? Number(it.weightKg) : null,
-            packaging: it.packaging || null,
-          })),
-      };
-    }
-
-    const updated = await prisma.shipment.update({
-      where: { id },
-      data,
-      select: { id: true, reference: true },
-    });
-
-    return NextResponse.json({ id: updated.id, reference: updated.reference });
+    const shipment = await shapeShipment(ctx.params.id);
+    if (!shipment) return new NextResponse("Not found", { status: 404 });
+    return NextResponse.json(shipment);
   } catch (e: any) {
-    return new NextResponse(e?.message || "Update failed", { status: 500 });
+    console.error("GET /api/shipments/[id] failed:", e);
+    return NextResponse.json({ message: e?.message || "Internal Server Error" }, { status: 500 });
   }
 }
 
-export async function DELETE(_req: Request, { params }: Ctx) {
+export async function PATCH(req: Request, ctx: { params: { id: string } }) {
+  const idOrRef = ctx.params.id;
+
   try {
-    const { id } = await params;
-    if (!id) return new NextResponse("Missing shipment id", { status: 400 });
+    const body = await req.json();
 
-    // Delete shipment (items/docs/events cascade)
-    await prisma.shipment.delete({ where: { id } });
+    // Load existing by id OR reference
+    const existing: any = await findShipmentRecord(idOrRef);
+    if (!existing) return new NextResponse("Not found", { status: 404 });
 
-    // Optional: delete uploaded folder
-    const dir = path.join(process.cwd(), "public", "uploads", "shipments", id);
-    try {
-      await fs.rm(dir, { recursive: true, force: true });
-    } catch {
-      // ignore
+    const id = existing.id; // real DB id (string/int)
+
+    const mode = body.mode ?? existing.mode;
+
+    if (body.vehicleId !== undefined && body.vehicleId) {
+      const v = await prisma.vehicle.findUnique({ where: { id: body.vehicleId } });
+      if (!v) return new NextResponse("Invalid vehicleId", { status: 400 });
+      if ((v as any).transportMode !== mode) return new NextResponse("Vehicle mode mismatch", { status: 400 });
     }
 
-    return NextResponse.json({ ok: true });
+    if (body.driverId !== undefined && body.driverId) {
+      const d = await prisma.driver.findUnique({ where: { id: body.driverId } });
+      if (!d) return new NextResponse("Invalid driverId", { status: 400 });
+      if ((d as any).transportMode !== mode) return new NextResponse("Driver mode mismatch", { status: 400 });
+    }
+
+    const statusChanged = body.status && body.status !== existing.status;
+
+    await prisma.shipment.update({
+      where: { id },
+      data: {
+        status: body.status ?? undefined,
+        etd: body.etd !== undefined ? parseDate(body.etd) : undefined,
+        eta: body.eta !== undefined ? parseDate(body.eta) : undefined,
+        slaStatus: body.slaStatus ?? undefined,
+
+        vehicleId: body.vehicleId !== undefined ? (body.vehicleId || null) : undefined,
+        driverId: body.driverId !== undefined ? (body.driverId || null) : undefined,
+
+        ...(statusChanged
+          ? {
+              events: {
+                create: {
+                  status: body.status,
+                  location: body.location || defaultLocationForStatus(body.status, existing),
+                  description: body.description || defaultDescriptionForStatus(body.status),
+                  user: body.user || "System",
+                },
+              },
+            }
+          : {}),
+      },
+    });
+
+    const shipment = await shapeShipment(String(id));
+    return NextResponse.json(shipment);
   } catch (e: any) {
-    return new NextResponse(e?.message || "Delete failed", { status: 500 });
+    console.error("PATCH /api/shipments/[id] failed:", e);
+    return NextResponse.json({ message: e?.message || "Internal Server Error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(_: Request, ctx: { params: { id: string } }) {
+  const idOrRef = ctx.params.id;
+
+  try {
+    const existing: any = await findShipmentRecord(idOrRef);
+    if (!existing) return new NextResponse("Not found", { status: 404 });
+
+    await prisma.shipment.delete({ where: { id: existing.id } });
+    return NextResponse.json({ success: true });
+  } catch (e: any) {
+    console.error("DELETE /api/shipments/[id] failed:", e);
+    return NextResponse.json({ message: e?.message || "Failed to delete shipment" }, { status: 500 });
   }
 }

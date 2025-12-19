@@ -1,3 +1,4 @@
+// app/api/login/route.ts
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
@@ -5,36 +6,30 @@ import { createToken } from "@/lib/jwt";
 
 export async function POST(req: Request) {
   try {
-    const { loginId, password } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const identifier = String(body?.loginId || body?.email || body?.identifier || "").trim();
+    const password = String(body?.password || "");
 
-    if (!loginId || !password) {
-      return NextResponse.json(
-        { message: "Missing loginId or password" },
-        { status: 400 }
-      );
+    if (!identifier || !password) {
+      return NextResponse.json({ message: "Missing loginId/email or password" }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { loginId },
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [{ loginId: identifier }, { email: identifier }],
+      },
     });
 
     if (!user) {
-      return NextResponse.json(
-        { message: "Invalid login credentials" },
-        { status: 401 }
-      );
+      return NextResponse.json({ message: "Invalid login credentials" }, { status: 401 });
     }
 
-    // Compare password
     const isMatch = await bcrypt.compare(password, user.password);
-
     if (!isMatch) {
-      return NextResponse.json(
-        { message: "Invalid login credentials" },
-        { status: 401 }
-      );
+      return NextResponse.json({ message: "Invalid login credentials" }, { status: 401 });
     }
-    const token= createToken({
+
+    const token = createToken({
       id: user.id,
       loginId: user.loginId,
       role: user.role,
@@ -42,18 +37,18 @@ export async function POST(req: Request) {
 
     const response = NextResponse.json({
       message: "Login Success",
-      user: { id: user.id, name: user.name, role: user.role },
+      user: { id: user.id, name: user.name, role: user.role, loginId: user.loginId, email: user.email },
     });
 
-    // Store token in HttpOnly cookie
+    // ✅ IMPORTANT: secure must be false in dev/localhost or cookie won't set
     response.cookies.set({
       name: "token",
       value: token,
       httpOnly: true,
-      secure: true,
-      sameSite: "strict",
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
       path: "/",
-      maxAge: 60 * 60 * 24, // 7 days
+      maxAge: 60 * 60 * 24 * 7, // 7 days
     });
 
     return response;

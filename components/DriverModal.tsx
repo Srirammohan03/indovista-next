@@ -8,16 +8,19 @@ import type { Vehicle } from "@/types/vehicle";
 type Props = {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (payload: any) => void;
+  onSave: (payload: any) => Promise<any>; // ✅ must be promise
   initialData: Driver | null;
   vehicles: Vehicle[];
   enabledModes: TransportMode[];
 };
 
 const roleOptions: DriverRole[] = ["DRIVER", "OPERATOR"];
+const fallbackModes: TransportMode[] = ["ROAD", "SEA", "AIR"];
 
 export function DriverModal({ isOpen, onClose, onSave, initialData, vehicles, enabledModes }: Props) {
   const [saving, setSaving] = useState(false);
+
+  const modes = enabledModes?.length ? enabledModes : fallbackModes;
 
   const [form, setForm] = useState<any>(() => ({
     id: initialData?.id ?? "",
@@ -33,7 +36,7 @@ export function DriverModal({ isOpen, onClose, onSave, initialData, vehicles, en
     email: initialData?.email ?? "",
     address: initialData?.address ?? "",
 
-    transportMode: (initialData?.transportMode ?? enabledModes?.[0] ?? "ROAD") as TransportMode,
+    transportMode: (initialData?.transportMode ?? modes?.[0] ?? "ROAD") as TransportMode,
     medicalCondition: initialData?.medicalCondition ?? "",
     notes: initialData?.notes ?? "",
 
@@ -42,6 +45,9 @@ export function DriverModal({ isOpen, onClose, onSave, initialData, vehicles, en
 
   React.useEffect(() => {
     if (!isOpen) return;
+
+    const nextModes = enabledModes?.length ? enabledModes : fallbackModes;
+
     setForm({
       id: initialData?.id ?? "",
       name: initialData?.name ?? "",
@@ -56,7 +62,7 @@ export function DriverModal({ isOpen, onClose, onSave, initialData, vehicles, en
       email: initialData?.email ?? "",
       address: initialData?.address ?? "",
 
-      transportMode: (initialData?.transportMode ?? enabledModes?.[0] ?? "ROAD") as TransportMode,
+      transportMode: (initialData?.transportMode ?? nextModes?.[0] ?? "ROAD") as TransportMode,
       medicalCondition: initialData?.medicalCondition ?? "",
       notes: initialData?.notes ?? "",
 
@@ -71,18 +77,29 @@ export function DriverModal({ isOpen, onClose, onSave, initialData, vehicles, en
   const toggleVehicle = (id: string) => {
     setForm((p: any) => {
       const exists = p.vehicleIds.includes(id);
-      return { ...p, vehicleIds: exists ? p.vehicleIds.filter((x: string) => x !== id) : [...p.vehicleIds, id] };
+      return {
+        ...p,
+        vehicleIds: exists ? p.vehicleIds.filter((x: string) => x !== id) : [...p.vehicleIds, id],
+      };
     });
   };
 
   if (!isOpen) return null;
 
   const save = async () => {
+    if (saving) return;
+
+    const name = String(form.name || "").trim();
+    if (!name) {
+      alert("Driver name is required");
+      return;
+    }
+
     setSaving(true);
     try {
       const payload = {
-        ...(form.id ? { id: form.id } : {}),
-        name: form.name,
+        ...(String(form.id || "").trim() ? { id: String(form.id).trim() } : {}),
+        name,
         age: form.age === "" ? null : Number(form.age),
         role: form.role,
 
@@ -101,7 +118,7 @@ export function DriverModal({ isOpen, onClose, onSave, initialData, vehicles, en
         vehicleIds: form.vehicleIds || [],
       };
 
-      await onSave(payload);
+      await onSave(payload); // ✅ really waits
     } finally {
       setSaving(false);
     }
@@ -112,7 +129,9 @@ export function DriverModal({ isOpen, onClose, onSave, initialData, vehicles, en
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">{form.id ? "Edit Driver / Operator" : "Add Driver / Operator"}</h2>
+            <h2 className="text-xl font-bold text-gray-900">
+              {String(form.id || "").trim() ? "Edit Driver / Operator" : "Add Driver / Operator"}
+            </h2>
             <p className="text-sm text-gray-500 mt-1">Driver/operator master with vehicle assignments</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full">
@@ -148,7 +167,9 @@ export function DriverModal({ isOpen, onClose, onSave, initialData, vehicles, en
                 onChange={(e) => setForm((p: any) => ({ ...p, role: e.target.value }))}
               >
                 {roleOptions.map((r) => (
-                  <option key={r} value={r}>{r}</option>
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
                 ))}
               </select>
             </div>
@@ -160,10 +181,14 @@ export function DriverModal({ isOpen, onClose, onSave, initialData, vehicles, en
               <select
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg"
                 value={form.transportMode}
-                onChange={(e) => setForm((p: any) => ({ ...p, transportMode: e.target.value, vehicleIds: [] }))}
+                onChange={(e) =>
+                  setForm((p: any) => ({ ...p, transportMode: e.target.value, vehicleIds: [] }))
+                }
               >
-                {enabledModes.map((m) => (
-                  <option key={m} value={m}>{m}</option>
+                {modes.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
                 ))}
               </select>
             </div>
@@ -248,7 +273,9 @@ export function DriverModal({ isOpen, onClose, onSave, initialData, vehicles, en
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Assigned Vehicle(s) (same mode)</label>
             <div className="border border-gray-200 rounded-lg p-3 max-h-[180px] overflow-auto bg-gray-50">
-              {filteredVehicles.length === 0 && <div className="text-sm text-gray-500">No vehicles for this mode.</div>}
+              {filteredVehicles.length === 0 && (
+                <div className="text-sm text-gray-500">No vehicles for this mode.</div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {filteredVehicles.map((v) => (
                   <label key={v.id} className="flex items-center gap-2 text-sm text-gray-800">
@@ -276,7 +303,10 @@ export function DriverModal({ isOpen, onClose, onSave, initialData, vehicles, en
         </div>
 
         <div className="p-6 border-t border-gray-100 flex justify-end gap-3">
-          <button onClick={onClose} className="px-5 py-2 border border-gray-300 rounded-lg font-semibold hover:bg-gray-50">
+          <button
+            onClick={onClose}
+            className="px-5 py-2 border border-gray-300 rounded-lg font-semibold hover:bg-gray-50"
+          >
             Cancel
           </button>
           <button

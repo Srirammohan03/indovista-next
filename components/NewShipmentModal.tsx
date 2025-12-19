@@ -55,6 +55,25 @@ type ProductRow = { id: string; name: string; type: string; hsCode?: string | nu
 // ✅ backend Currency table
 type CurrencyRow = { id: number; currencyCode: string; name: string; exchangeRate: number };
 
+// ✅ vehicles + drivers (assumed endpoints)
+// If your API shape differs, adjust these two types only.
+type VehicleRow = {
+  id: string;
+  name: string;
+  number: string;
+  transportMode: Mode;
+  assignedDrivers?: Array<{ id: string; name: string; role?: string }>;
+};
+
+type DriverRow = {
+  id: string;
+  name: string;
+  role?: string;
+  transportMode: Mode;
+  contactNumber?: string | null;
+  licenseNumber?: string | null;
+};
+
 type ShipmentItemDraft = {
   productId: string;
   quantity: number;
@@ -88,6 +107,10 @@ export const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onCl
   const [temperatures, setTemperatures] = useState<TemperatureRow[]>([]);
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [currencies, setCurrencies] = useState<CurrencyRow[]>([]);
+
+  // ✅ Vehicles/Drivers (best-effort fetch)
+  const [vehicles, setVehicles] = useState<VehicleRow[]>([]);
+  const [drivers, setDrivers] = useState<DriverRow[]>([]);
 
   const [loadingMaster, setLoadingMaster] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -128,6 +151,10 @@ export const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onCl
     temperatureId: "",
     items: [{ productId: "", quantity: 1, unit: "Cartons", weightKg: undefined, packaging: "" }] as ShipmentItemDraft[],
 
+    // ✅ Step 3 (Vehicle + Driver)
+    vehicleId: "",
+    driverId: "",
+
     // Step 4
     status: "BOOKED" as ShipmentStatus,
     etd: "",
@@ -150,6 +177,62 @@ export const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onCl
     const m = formData.mode;
     return containerTypes.filter((c) => c.transportMode === m);
   }, [containerTypes, formData.mode]);
+
+  const filteredVehicles = useMemo(() => {
+    return vehicles.filter((v) => v.transportMode === formData.mode);
+  }, [vehicles, formData.mode]);
+
+  const selectedVehicle = useMemo(() => {
+    return vehicles.find((v) => v.id === formData.vehicleId) || null;
+  }, [vehicles, formData.vehicleId]);
+
+  const driverOptions = useMemo(() => {
+    // Prefer assigned drivers on the chosen vehicle (if API returns them)
+    if (selectedVehicle?.assignedDrivers?.length) {
+      return selectedVehicle.assignedDrivers.map((d) => ({
+        id: d.id,
+        name: d.name,
+        role: d.role,
+        transportMode: formData.mode,
+      }));
+    }
+    // Fallback: all drivers filtered by mode
+    return drivers.filter((d) => d.transportMode === formData.mode);
+  }, [drivers, selectedVehicle, formData.mode]);
+
+  // ✅ when mode changes, clear incompatible selections
+  useEffect(() => {
+    setFormData((prev) => {
+      const vehicleOk = !prev.vehicleId || vehicles.find((v) => v.id === prev.vehicleId && v.transportMode === prev.mode);
+      const nextVehicleId = vehicleOk ? prev.vehicleId : "";
+      const nextDriverPool = (() => {
+        const v = vehicles.find((x) => x.id === nextVehicleId);
+        if (v?.assignedDrivers?.length) return v.assignedDrivers.map((d) => d.id);
+        return drivers.filter((d) => d.transportMode === prev.mode).map((d) => d.id);
+      })();
+
+      const driverOk = !prev.driverId || nextDriverPool.includes(prev.driverId);
+      return {
+        ...prev,
+        vehicleId: nextVehicleId,
+        driverId: driverOk ? prev.driverId : "",
+      };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.mode, vehicles, drivers]);
+
+  // ✅ when vehicle changes, auto-pick driver if possible (optional UX)
+  useEffect(() => {
+    if (!formData.vehicleId) return;
+    const v = vehicles.find((x) => x.id === formData.vehicleId);
+    if (!v?.assignedDrivers?.length) return;
+
+    const allowed = v.assignedDrivers.map((d) => d.id);
+    if (!formData.driverId || !allowed.includes(formData.driverId)) {
+      setFormData((prev) => ({ ...prev, driverId: allowed[0] || "" }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.vehicleId, vehicles]);
 
   // ✅ auto-set currency from selected customer (if customers api returns currency)
   useEffect(() => {
@@ -176,15 +259,26 @@ export const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onCl
           return res.json();
         };
 
-        const [c, p, i, ct, t, pr, cur] = await Promise.all([
+        const safeFetchJson = async <T,>(url: string, fallback: T): Promise<T> => {
+          try {
+            return await fetchJson<T>(url);
+          } catch {
+            return fallback;
+          }
+        };
+
+        const [c, p, i, ct, t, pr, cur, v, d] = await Promise.all([
           fetchJson<CustomerRow[]>("/api/customers"),
           fetchJson<PortRow[]>("/api/master-data/ports"),
           fetchJson<IncotermRow[]>("/api/master-data/incoterms"),
           fetchJson<ContainerTypeRow[]>("/api/master-data/containers"),
           fetchJson<TemperatureRow[]>("/api/master-data/temp-presets"),
           fetchJson<ProductRow[]>("/api/products"),
-          // ✅ currency master
           fetchJson<CurrencyRow[]>("/api/master-data/currencies"),
+
+          // ✅ best-effort: if endpoints missing, no crash
+          safeFetchJson<VehicleRow[]>("/api/vehicles", []),
+          safeFetchJson<DriverRow[]>("/api/drivers", []),
         ]);
 
         setCustomers(c);
@@ -195,7 +289,8 @@ export const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onCl
         setProducts(pr);
         setCurrencies(cur);
 
-        // ✅ if customer has currency, auto-set once customer selected later; keep INR for now
+        setVehicles(v);
+        setDrivers(d);
       } catch (e: any) {
         alert(e?.message || "Failed to load master data");
       } finally {
@@ -255,6 +350,8 @@ export const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onCl
     setPendingDocs((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const toNumOrNull = (v: string) => (v ? Number(v) : null);
+
   const createShipment = async () => {
     if (!formData.customerId) return alert("Customer is required.");
     if (!formData.direction || !formData.mode) return alert("Direction & Mode required.");
@@ -265,54 +362,112 @@ export const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onCl
     setSaving(true);
     try {
       // ✅ no draftId, no id in payload
-      const payload = {
-        reference: formData.reference,
-        masterDoc: formData.masterDoc,
+      // const payload: any = {
+      //   reference: formData.reference,
+      //   masterDoc: formData.masterDoc,
 
-        customerId: formData.customerId,
-        direction: formData.direction,
-        mode: formData.mode,
-        incotermId: formData.incotermId || null,
-        commodity: formData.commodity,
+      //   customerId: formData.customerId,
+      //   direction: formData.direction,
+      //   mode: formData.mode,
+      //   incotermId: toNumOrNull(formData.incotermId),
+      //   commodity: formData.commodity,
 
-        origin: {
-          city: formData.originCity,
-          country: formData.originCountry,
-          contact: formData.originContact,
-          portId: formData.originPortId || null,
-        },
-        destination: {
-          city: formData.destCity,
-          country: formData.destCountry,
-          contact: formData.destContact,
-          portId: formData.destPortId || null,
-        },
+      //   origin: {
+      //     city: formData.originCity,
+      //     country: formData.originCountry,
+      //     contact: formData.originContact,
+      //     portId: toNumOrNull(formData.originPortId),
+      //   },
+      //   destination: {
+      //     city: formData.destCity,
+      //     country: formData.destCountry,
+      //     contact: formData.destContact,
+      //     portId: toNumOrNull(formData.destPortId),
+      //   },
 
-        containerTypeId: formData.containerTypeId || null,
-        temperatureId: formData.temperatureId || null,
+      //   containerTypeId: toNumOrNull(formData.containerTypeId),
+      //   temperatureId: toNumOrNull(formData.temperatureId),
 
-        items: formData.items
-          .filter((it) => it.productId)
-          .map((it) => ({
-            productId: it.productId,
-            quantity: Number(it.quantity || 0),
-            unit: it.unit || "Unit",
-            weightKg: it.weightKg != null ? Number(it.weightKg) : null,
-            packaging: it.packaging || null,
-          })),
+      //   items: formData.items
+      //     .filter((it) => it.productId)
+      //     .map((it) => ({
+      //       productId: it.productId,
+      //       quantity: Number(it.quantity || 0),
+      //       unit: it.unit || "Unit",
+      //       weightKg: it.weightKg != null ? Number(it.weightKg) : null,
+      //       packaging: it.packaging || null,
+      //     })),
 
-        status: formData.status,
-        etd: formData.etd || null,
-        eta: formData.eta || null,
-        slaStatus: formData.slaStatus,
+      //   // ✅ assignment (optional)
+      //   vehicleId: formData.vehicleId || null,
+      //   driverId: formData.driverId || null,
 
-        financials: {
-          currency: formData.currency || "INR",
-          revenue: formData.revenue ? Number(formData.revenue) : 0,
-          cost: formData.cost ? Number(formData.cost) : 0,
-          invoiceStatus: formData.invoiceStatus,
-        },
-      };
+      //   status: formData.status,
+      //   etd: formData.etd || null,
+      //   eta: formData.eta || null,
+      //   slaStatus: formData.slaStatus,
+
+      //   financials: {
+      //     currency: formData.currency || "INR",
+      //     revenue: formData.revenue ? Number(formData.revenue) : 0,
+      //     cost: formData.cost ? Number(formData.cost) : 0,
+      //     invoiceStatus: formData.invoiceStatus,
+      //   },
+      // };
+      const clean = (v: string) => (v || "").trim();
+
+const payload: any = {
+  ...(clean(formData.reference) ? { reference: clean(formData.reference) } : {}),
+  ...(clean(formData.masterDoc) ? { masterDoc: clean(formData.masterDoc) } : {}),
+
+  customerId: formData.customerId,
+  direction: formData.direction,
+  mode: formData.mode,
+  incotermId: toNumOrNull(formData.incotermId),
+  commodity: formData.commodity,
+
+  origin: {
+    city: clean(formData.originCity),
+    country: clean(formData.originCountry),
+    contact: clean(formData.originContact) || null,
+    portId: toNumOrNull(formData.originPortId),
+  },
+  destination: {
+    city: clean(formData.destCity),
+    country: clean(formData.destCountry),
+    contact: clean(formData.destContact) || null,
+    portId: toNumOrNull(formData.destPortId),
+  },
+
+  containerTypeId: toNumOrNull(formData.containerTypeId),
+  temperatureId: toNumOrNull(formData.temperatureId),
+
+  items: formData.items
+    .filter((it) => it.productId)
+    .map((it) => ({
+      productId: it.productId,
+      quantity: Number(it.quantity || 0),
+      unit: clean(it.unit) || "Unit",
+      weightKg: it.weightKg != null ? Number(it.weightKg) : null,
+      packaging: clean(it.packaging || "") || null,
+    })),
+
+  vehicleId: formData.vehicleId || null,
+  driverId: formData.driverId || null,
+
+  status: formData.status,
+  etd: formData.etd || null,
+  eta: formData.eta || null,
+  slaStatus: formData.slaStatus,
+
+  financials: {
+    currency: formData.currency || "INR",
+    revenue: formData.revenue ? Number(formData.revenue) : 0,
+    cost: formData.cost ? Number(formData.cost) : 0,
+    invoiceStatus: formData.invoiceStatus,
+  },
+};
+
 
       // 1) create shipment (backend generates SHP-YYYY-001 and reference IMP-FZ-001)
       const res = await fetch("/api/shipments", {
@@ -571,7 +726,7 @@ export const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onCl
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Port *</label>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Port</label>
                     <select
                       className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                       value={formData.originPortId}
@@ -619,7 +774,7 @@ export const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onCl
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Port *</label>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Port</label>
                     <select
                       className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                       value={formData.destPortId}
@@ -718,7 +873,9 @@ export const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onCl
                             type="number"
                             className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                             value={it.weightKg ?? ""}
-                            onChange={(e) => updateItemRow(idx, { weightKg: e.target.value ? Number(e.target.value) : undefined })}
+                            onChange={(e) =>
+                              updateItemRow(idx, { weightKg: e.target.value ? Number(e.target.value) : undefined })
+                            }
                           />
                         </div>
 
@@ -780,6 +937,56 @@ export const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onCl
                       </option>
                     ))}
                   </select>
+                </div>
+              </div>
+
+              {/* ✅ Vehicle + Driver */}
+              <div className="border-t pt-6">
+                <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-4">Vehicle + Driver (Optional)</h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Vehicle (Mode: {formData.mode})</label>
+                    <select
+                      className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                      value={formData.vehicleId}
+                      onChange={(e) => setFormData({ ...formData, vehicleId: e.target.value })}
+                    >
+                      <option value="">Select vehicle</option>
+                      {filteredVehicles.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name} — {v.number}
+                        </option>
+                      ))}
+                    </select>
+                    {vehicles.length > 0 && filteredVehicles.length === 0 && (
+                      <p className="text-xs text-gray-400 mt-1">No vehicles available for this mode.</p>
+                    )}
+                    {vehicles.length === 0 && <p className="text-xs text-gray-400 mt-1">Vehicles not available.</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Driver</label>
+                    <select
+                      className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                      value={formData.driverId}
+                      onChange={(e) => setFormData({ ...formData, driverId: e.target.value })}
+                      disabled={driverOptions.length === 0}
+                    >
+                      <option value="">{driverOptions.length ? "Select driver" : "No drivers available"}</option>
+                      {driverOptions.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name} {d.role ? `— ${d.role}` : ""}
+                        </option>
+                      ))}
+                    </select>
+
+                    <p className="text-xs text-gray-400 mt-1">
+                      {selectedVehicle?.assignedDrivers?.length
+                        ? "Showing drivers assigned to the selected vehicle."
+                        : "Showing drivers filtered by shipment mode."}
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -1028,6 +1235,14 @@ export const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onCl
                   Margin (auto):{" "}
                   <span className="font-mono">{(Number(formData.revenue || 0) - Number(formData.cost || 0)).toFixed(0)}</span>
                 </div>
+
+                <div className="mt-2 text-xs text-gray-500">
+                  Vehicle/Driver:{" "}
+                  <span className="font-mono">
+                    {formData.vehicleId ? formData.vehicleId : "—"} / {formData.driverId ? formData.driverId : "—"}
+                  </span>
+                </div>
+
                 <div className="mt-1 text-xs text-gray-400">Documents to upload after create: {pendingDocs.length}</div>
               </div>
             </div>

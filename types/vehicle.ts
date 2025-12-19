@@ -1,4 +1,7 @@
-export type TransportMode = "ROAD" | "SEA" | "AIR";
+import type { TransportMode } from "./transport";
+
+export type { TransportMode };
+
 export type VehicleOwnership = "OWN" | "RENT";
 export type FuelType = "PETROL" | "DIESEL" | "CNG" | "LPG" | "ELECTRIC" | "OTHER";
 

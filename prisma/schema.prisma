@@ -334,6 +334,8 @@ model Shipment {
   invoiceStatus InvoiceStatus      @default(DRAFT)
   vehicleId  String?
   vehicle    Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  driverId      String?
+  driver        Driver?            @relation(fields: [driverId], references: [id], onDelete: Restrict)
 
   items         ShipmentItem[]
   documents     ShipmentDocument[]
@@ -347,6 +349,7 @@ model Shipment {
   @@index([mode])
   @@index([direction])
   @@index([vehicleId])
+  @@index([driverId])
 }
 
 model ShipmentItem {
@@ -494,6 +497,7 @@ model Driver {
   notes            String?
 
   vehicles         VehicleDriver[]
+  shipments        Shipment[]
 
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt

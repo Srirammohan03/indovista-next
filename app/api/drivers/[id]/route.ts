@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
-type Ctx = { params: { id: string } | Promise<{ id: string }> };
 
 type TransportMode = "ROAD" | "SEA" | "AIR";
 type DriverRole = "DRIVER" | "OPERATOR";
@@ -18,23 +17,93 @@ function normalizeRole(v: any): DriverRole {
   return x === "OPERATOR" ? "OPERATOR" : "DRIVER";
 }
 
-export async function PUT(req: Request, ctx: Ctx) {
-  const { id } = await Promise.resolve(ctx.params);
+// ✅ Works in Next 14 + Next 15 where params may be a Promise
+async function getIdFromContext(ctx: any): Promise<string | undefined> {
+  const params = await Promise.resolve(ctx?.params);
+  const id = params?.id;
+  if (typeof id !== "string") return undefined;
+  const trimmed = id.trim();
+  return trimmed ? trimmed : undefined;
+}
 
+export async function GET(_: Request, ctx: any) {
   try {
-    const body = await req.json().catch(() => ({}));
+    const id = await getIdFromContext(ctx);
     if (!id) return NextResponse.json({ message: "Missing driver id" }, { status: 400 });
-    if (!body?.name) return NextResponse.json({ message: "Driver name is required" }, { status: 400 });
+
+    const d = await prisma.driver.findUnique({
+      where: { id },
+      include: { vehicles: { include: { vehicle: true } } },
+    });
+
+    if (!d) return NextResponse.json({ message: "Not found" }, { status: 404 });
+
+    return NextResponse.json({
+      id: d.id,
+      name: d.name,
+      age: d.age,
+      role: d.role,
+      profession: d.profession,
+      education: d.education,
+      languages: d.languages,
+      licenseNumber: d.licenseNumber,
+      contactNumber: d.contactNumber,
+      email: d.email,
+      address: d.address,
+      transportMode: d.transportMode,
+      medicalCondition: d.medicalCondition,
+      notes: d.notes,
+      assignedVehicles: (d.vehicles || []).map((x) => ({
+        id: x.vehicle.id,
+        name: x.vehicle.name,
+        number: x.vehicle.number,
+        transportMode: x.vehicle.transportMode,
+      })),
+    });
+  } catch (e: any) {
+    return NextResponse.json({ message: e?.message || "Failed to fetch driver" }, { status: 500 });
+  }
+}
+
+export async function PUT(req: Request, ctx: any) {
+  try {
+    const id = await getIdFromContext(ctx);
+    if (!id) return NextResponse.json({ message: "Missing driver id" }, { status: 400 });
+
+    const body = await req.json().catch(() => ({}));
+    if (!String(body?.name || "").trim()) {
+      return NextResponse.json({ message: "Driver name is required" }, { status: 400 });
+    }
 
     const transportMode = normalizeMode(body.transportMode);
     const role = normalizeRole(body.role);
     const vehicleIds: string[] = Array.isArray(body.vehicleIds) ? body.vehicleIds : [];
 
+    // ✅ Validate vehicles exist + mode matches (prevents FK errors and wrong-mode assignments)
+    if (vehicleIds.length) {
+      const vehicles = await prisma.vehicle.findMany({
+        where: { id: { in: vehicleIds } },
+        select: { id: true, transportMode: true },
+      });
+
+      if (vehicles.length !== vehicleIds.length) {
+        return NextResponse.json({ message: "One or more vehicleIds are invalid" }, { status: 400 });
+      }
+
+      const bad = vehicles.find((v) => v.transportMode !== transportMode);
+      if (bad) {
+        return NextResponse.json(
+          { message: "One or more selected vehicles do not match the driver transport mode" },
+          { status: 400 }
+        );
+      }
+    }
+
     const updated = await prisma.$transaction(async (tx) => {
       const d = await tx.driver.update({
         where: { id },
         data: {
-          name: body.name,
+          name: String(body.name).trim(),
           age: body.age == null || body.age === "" ? null : Number(body.age),
           role,
 
@@ -53,6 +122,7 @@ export async function PUT(req: Request, ctx: Ctx) {
       });
 
       await tx.vehicleDriver.deleteMany({ where: { driverId: id } });
+
       if (vehicleIds.length) {
         await tx.vehicleDriver.createMany({
           data: vehicleIds.map((vehicleId) => ({ vehicleId, driverId: id })),
@@ -65,15 +135,23 @@ export async function PUT(req: Request, ctx: Ctx) {
 
     return NextResponse.json(updated);
   } catch (e: any) {
+    if (e?.code === "P2025") {
+      return NextResponse.json({ message: "Driver not found" }, { status: 404 });
+    }
     return NextResponse.json({ message: e?.message || "Failed to update driver" }, { status: 500 });
   }
 }
 
-export async function DELETE(_req: Request, ctx: Ctx) {
-  const { id } = await Promise.resolve(ctx.params);
-
+export async function DELETE(_: Request, ctx: any) {
   try {
-    await prisma.driver.delete({ where: { id } });
+    const id = await getIdFromContext(ctx);
+    if (!id) return NextResponse.json({ message: "Missing driver id" }, { status: 400 });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.vehicleDriver.deleteMany({ where: { driverId: id } });
+      await tx.driver.delete({ where: { id } });
+    });
+
     return NextResponse.json({ success: true });
   } catch (e: any) {
     return NextResponse.json({ message: e?.message || "Failed to delete driver" }, { status: 500 });

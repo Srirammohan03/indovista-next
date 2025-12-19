@@ -1,3 +1,4 @@
+// app/login/page.tsx
 "use client";
 
 import React, { useState } from "react";
@@ -6,7 +7,7 @@ import { Ship, Lock, User } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 const LoginPage = () => {
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState(""); // loginId OR email
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const { login } = useAuth();
@@ -16,12 +17,13 @@ const LoginPage = () => {
     e.preventDefault();
     setError("");
 
-    const success = await login(email, password);
+    const success = await login(identifier, password);
 
     if (success) {
-      router.push("/dashboard");
+      // ✅ You already have /vehicles working
+      router.push("/vehicles");
     } else {
-      setError("Invalid email or password");
+      setError("Invalid loginId/email or password");
     }
   };
 
@@ -32,36 +34,30 @@ const LoginPage = () => {
           <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
             <Ship className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">
-            INDOVISTA LOGISTICS
-          </h1>
-          <p className="text-blue-100 mt-2 text-sm">
-            Enterprise Logistics Management
-          </p>
+          <h1 className="text-2xl font-bold text-white tracking-tight">INDOVISTA LOGISTICS</h1>
+          <p className="text-blue-100 mt-2 text-sm">Enterprise Logistics Management</p>
         </div>
 
         <div className="p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Email
+                Login ID / Email
               </label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
-                  type="email"
+                  type="text"
                   className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                  placeholder="Enter your email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Enter loginId or email"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Password
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Password</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
@@ -89,7 +85,7 @@ const LoginPage = () => {
           </form>
 
           <div className="mt-6 text-center text-xs text-gray-400">
-            © 2025 Indovista Logistics. All rights reserved.
+            © 2025 Indovista Logistics. All rights reserved. Powered by Outright Creators
           </div>
         </div>
       </div>
