@@ -346,7 +346,8 @@ export async function GET() {
         eta: s.eta ? s.eta.toISOString().slice(0, 10) : "",
 
         vehicle: s.vehicleId ? vehicleMap.get(s.vehicleId) || null : null,
-      }))
+      })),
+      { headers: noStoreHeaders }
     );
   } catch (e: any) {
     console.error("GET /api/shipments failed:", e);

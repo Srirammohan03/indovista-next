@@ -84,7 +84,7 @@ export default function ShipmentList() {
   const { data: shipments = [], isLoading } = useQuery<ShipmentRow[]>({
     queryKey: ["shipments"],
     queryFn: async () => {
-      const res = await fetch("/api/shipments");
+      const res = await fetch("/api/shipments",  { cache: "no-store" });
       if (!res.ok) throw new Error("Failed to load shipments");
       return res.json();
     },

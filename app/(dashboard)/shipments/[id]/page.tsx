@@ -36,6 +36,7 @@ import { UploadDocumentModal } from "@/app/(dashboard)/shipments/components/Uplo
 import { EditDocumentModal } from "@/app/(dashboard)/shipments/components/EditDocumentModal";
 import { FinancialEditModal } from "@/app/(dashboard)/shipments/components/FinancialEditModal";
 import { VehicleDriverAssignModal } from "@/app/(dashboard)/shipments/components/VehicleDriverAssignModal";
+import { CreateQuoteButton } from "@/components/CreateQuoteButton";
 
 
 
@@ -734,7 +735,7 @@ export default function ShipmentDetail() {
                 <h3 className="font-semibold text-gray-900">Financials</h3>
                 <p className="text-sm text-gray-500 mt-1">Edit currency, revenue, cost, invoice status.</p>
               </div>
-
+                <CreateQuoteButton shipmentId={shipment.id} />
               <button
                 onClick={() => setFinancialOpen(true)}
                 className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-semibold hover:bg-blue-700 inline-flex items-center gap-2"

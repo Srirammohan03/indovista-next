@@ -55,6 +55,7 @@ model Customer {
   updatedAt       DateTime       @updatedAt
 
   shipments  Shipment[]
+  quotes     Quote[]
 }
 
 enum CustomerType {
@@ -345,6 +346,7 @@ model Shipment {
   items         ShipmentItem[]
   documents     ShipmentDocument[]
   events        ShipmentEvent[]
+  quotes        Quote[]
 
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
@@ -523,4 +525,117 @@ model VehicleDriver {
   @@id([vehicleId, driverId])
   @@index([driverId])
   @@map("vehicle_drivers")
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum ChargeType {
+  FLAT
+  PER_UNIT
+}
+
+model Quote {
+  // ✅ Quote number format: QT-2025-001 (THIS IS THE PRIMARY KEY)
+  id String @id
+
+  shipmentId String?
+  shipment   Shipment? @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  quoteDate    DateTime @default(now())
+  validityDays Int?     @default(7)
+  validTill    DateTime?
+  status       QuoteStatus @default(DRAFT)
+  preparedBy   String?
+
+  // ---------------------------
+  // SNAPSHOT (from Shipment/Customer)
+  // ---------------------------
+  customerName  String
+  contactPerson String?
+  email         String?
+  phone         String?
+  address       String?
+  country       String?
+
+  originCity     String
+  originCountry  String
+  originPortCode String?
+
+  destCity       String
+  destCountry    String
+  destPortCode   String?
+
+  mode      TransportMode
+  direction ShipmentDirection?
+  commodity ShipmentCommodity
+  incotermCode String?
+
+  containerTypeCode String?
+  containersCount   Int?
+
+  temperatureRange String?
+  specialHandlingNotes String?
+
+  totalWeightKg  Float? @default(0)
+  totalVolumeCbm Float? @default(0)
+  packagesCount  Int?   @default(0)
+  packagingType  String?
+
+  // ---------------------------
+  // FINANCIALS
+  // ---------------------------
+  currencyCode   String  @default("INR")
+  taxesIncluded  Boolean @default(false)
+  taxAmount      Float   @default(0)
+  taxPercent    Float    @default(0)
+  subtotal       Float   @default(0)
+  total          Float   @default(0)
+
+  notesIncluded String?
+  notesExcluded String?
+  disclaimer    String?
+
+  acceptedBy   String?
+  acceptedAt   DateTime?
+  companyStamp String?
+
+  charges   QuoteCharge[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shipmentId])
+  @@index([customerId])
+  @@index([status])
+  @@map("quotes")
+}
+
+model QuoteCharge {
+  id String @id @default(cuid())
+
+  quoteId String
+  quote   Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  name       String
+  chargeType ChargeType @default(FLAT)
+  currencyCode String @default("INR")
+
+  // If PER_UNIT, store quantity + unitLabel; total is quantity * amount
+  quantity  Float?  @default(1)
+  unitLabel String?
+  amount    Float   @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@index([quoteId])
+  @@map("quote_charges")
 }

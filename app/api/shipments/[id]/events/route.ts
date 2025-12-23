@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
+const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
+
 
 type Ctx = { params: { id: string } | Promise<{ id: string }> };
 
@@ -42,10 +44,11 @@ export async function GET(_req: Request, { params }: Ctx) {
         location: true,
         description: true,
         user: true,
-      },
-    });
+      }, 
+    })
+    
 
-    return NextResponse.json(events);
+    return NextResponse.json(events), { headers: noStoreHeaders };
   } catch (e: any) {
     return new NextResponse(e?.message || "Failed to fetch events", { status: 500 });
   }
@@ -106,7 +109,7 @@ export async function POST(req: Request, { params }: Ctx) {
       return { shipmentId: s.id, event: createdEvent };
     });
 
-    return NextResponse.json({ ok: true, shipmentId: result.shipmentId, event: result.event });
+    return NextResponse.json({ ok: true, shipmentId: result.shipmentId, event: result.event }, { headers: noStoreHeaders });
   } catch (e: any) {
     return new NextResponse(e?.message || "Status update failed", { status: 500 });
   }
