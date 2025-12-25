@@ -1,6 +1,4 @@
-// app/(dashboard)/billing/page.tsx
 "use client";
-
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/Card";
@@ -27,20 +25,15 @@ type InvoiceRow = {
   shipmentId: string;
   shipmentRef: string;
   customerName: string;
+  customerGstin?: string | null;
+  placeOfSupply?: string | null;
   amount: number;
+  paidAmount: number;
+  balanceAmount: number;
   currency: string;
   issueDate: string;
   dueDate: string;
   status: "DRAFT" | "SENT" | "PAID" | "OVERDUE";
-};
-
-type ShipmentOption = {
-  id: string;
-  reference: string;
-  customerName: string;
-  amount: number;
-  currency: string;
-  createdAt: string;
 };
 
 const BillingPage = () => {
@@ -48,7 +41,7 @@ const BillingPage = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
-  const [editingShipmentId, setEditingShipmentId] = useState<string | null>(null);
+  const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
 
   const {
     data: invoices = [],
@@ -63,47 +56,35 @@ const BillingPage = () => {
     },
   });
 
-  const {
-    data: shipments = [],
-    isLoading: isLoadingShipments,
-    refetch: refetchShipments,
-  } = useQuery<ShipmentOption[]>({
-    queryKey: ["shipments"],
-    queryFn: async () => {
-      const res = await fetch("/api/shipments", { cache: "no-store" });
-      if (!res.ok) throw new Error("Failed to load shipments");
-      return res.json();
-    },
-  });
-
   const openCreateModal = () => {
     setModalMode("create");
-    setEditingShipmentId(null);
+    setEditingInvoiceId(null);
     setIsModalOpen(true);
   };
 
-  const openEditModal = (shipmentId: string) => {
+  const openEditModal = (invoiceId: string) => {
     setModalMode("edit");
-    setEditingShipmentId(shipmentId);
+    setEditingInvoiceId(invoiceId);
     setIsModalOpen(true);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
-    setEditingShipmentId(null);
+    setEditingInvoiceId(null);
   };
 
   const onSaved = async () => {
-    await Promise.all([refetchInvoices(), refetchShipments()]);
+    await refetchInvoices();
   };
 
   const filtered = useMemo(() => {
     const t = searchTerm.toLowerCase();
     return invoices.filter(
       (inv) =>
-        inv.invoiceNumber.toLowerCase().includes(t) ||
-        inv.customerName.toLowerCase().includes(t) ||
-        inv.shipmentRef.toLowerCase().includes(t)
+        (inv.invoiceNumber || "").toLowerCase().includes(t) ||
+        (inv.customerName || "").toLowerCase().includes(t) ||
+        (inv.shipmentRef || "").toLowerCase().includes(t) ||
+        (inv.shipmentId || "").toLowerCase().includes(t)
     );
   }, [invoices, searchTerm]);
 
@@ -113,7 +94,7 @@ const BillingPage = () => {
         style: "currency",
         currency,
         maximumFractionDigits: 2,
-      }).format(amount);
+      }).format(Number(amount || 0));
     } catch {
       return `${amount}`;
     }
@@ -131,13 +112,14 @@ const BillingPage = () => {
     return t;
   }, []);
 
-  // KPIs
+  // KPIs using balanceAmount (truth from payments)
   const totals = useMemo(() => {
-    const outstanding = invoices.filter((i) => i.status !== "PAID");
+    const outstanding = invoices.filter((i) => Number(i.balanceAmount || 0) > 0);
     const overdue = invoices.filter((i) => i.status === "OVERDUE");
     const paid = invoices.filter((i) => i.status === "PAID");
 
-    const sum = (list: InvoiceRow[]) => list.reduce((a, b) => a + (Number(b.amount) || 0), 0);
+    const sum = (list: InvoiceRow[], key: "amount" | "balanceAmount" | "paidAmount") =>
+      list.reduce((a, b) => a + (Number((b as any)[key]) || 0), 0);
 
     const paidThisMonth = paid.filter((i) => {
       const d = parseDate(i.issueDate);
@@ -148,107 +130,96 @@ const BillingPage = () => {
 
     return {
       totalCount: invoices.length,
-      outstandingAmount: sum(outstanding),
-      overdueAmount: sum(overdue),
-      paidThisMonthAmount: sum(paidThisMonth),
+      outstandingAmount: sum(outstanding, "balanceAmount"),
+      overdueAmount: sum(overdue, "balanceAmount"),
+      paidThisMonthAmount: sum(paidThisMonth, "amount"),
       currency: invoices[0]?.currency || "INR",
       outstanding,
     };
   }, [invoices]);
 
-  // Aging buckets based on days past due (only unpaid)
+  // Aging buckets (only unpaid balances)
   const aging = useMemo(() => {
     const buckets = { b0_30: 0, b31_60: 0, b61_90: 0, b90p: 0 };
+
     totals.outstanding.forEach((inv) => {
       const due = parseDate(inv.dueDate);
+      const bal = Number(inv.balanceAmount || 0);
+
       if (!due) {
-        buckets.b0_30 += inv.amount;
+        buckets.b0_30 += bal;
         return;
       }
+
       due.setHours(0, 0, 0, 0);
       const days = Math.max(0, Math.floor((today0.getTime() - due.getTime()) / 86400000));
 
-      if (days <= 30) buckets.b0_30 += inv.amount;
-      else if (days <= 60) buckets.b31_60 += inv.amount;
-      else if (days <= 90) buckets.b61_90 += inv.amount;
-      else buckets.b90p += inv.amount;
+      if (days <= 30) buckets.b0_30 += bal;
+      else if (days <= 60) buckets.b31_60 += bal;
+      else if (days <= 90) buckets.b61_90 += bal;
+      else buckets.b90p += bal;
     });
 
     const total = buckets.b0_30 + buckets.b31_60 + buckets.b61_90 + buckets.b90p;
     const pct = (v: number) => (total > 0 ? (v / total) * 100 : 0);
-
     return { ...buckets, total, pct };
   }, [totals.outstanding, today0]);
 
-  const buildPdfInvoice = (row: InvoiceRow): Invoice => {
-    const itemAmount = Number(row.amount || 0);
-    return {
-      id: row.invoiceNumber,
-      invoiceNumber: row.invoiceNumber,
-      customerName: row.customerName,
-      customerGstin: "",
-      placeOfSupply: "",
-      shipmentRef: row.shipmentRef,
-      issueDate: row.issueDate,
-      dueDate: row.dueDate,
-      subtotal: itemAmount,
-      totalTax: 0,
-      tdsRate: 0,
-      tdsAmount: 0,
-      amount: itemAmount,
-      currency: row.currency,
-      status: row.status,
-      items: [
-        {
-          id: "1",
-          description: `Freight charges for shipment ${row.shipmentRef}`,
-          hsnCode: "",
-          quantity: 1,
-          rate: itemAmount,
-          taxRate: 0,
-          taxableValue: itemAmount,
-          amount: itemAmount,
-        },
-      ],
+  const handleDownload = async (row: InvoiceRow) => {
+    const res = await fetch(`/api/invoices/${encodeURIComponent(row.id)}`, { cache: "no-store" });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      alert(j.message || "Failed to load invoice for PDF");
+      return;
+    }
+
+    const data = await res.json();
+
+    const invoice: Invoice = {
+      id: data.id,
+      invoiceNumber: data.invoiceNumber,
+      shipmentId: data.shipmentId || row.shipmentId,
+      customerName: data.customerName,
+      customerGstin: data.customerGstin || "",
+      placeOfSupply: data.placeOfSupply || "",
+      shipmentRef: data.shipmentRef || row.shipmentRef,
+      issueDate: data.issueDate,
+      dueDate: data.dueDate,
+      subtotal: Number(data.subtotal || 0),
+      totalTax: Number(data.totalTax || 0),
+      tdsRate: Number(data.tdsRate || 0),
+      tdsAmount: Number(data.tdsAmount || 0),
+      amount: Number(data.amount || 0),
+      currency: data.currency || row.currency,
+      status: data.status,
+      items: Array.isArray(data.items) ? data.items : [],
+      paidAmount: Number(data.paidAmount || 0),
+      balanceAmount: Number(data.balanceAmount || 0),
     };
+
+    openInvoicePdfInNewTab(invoice);
   };
 
-  const handleDownload = (row: InvoiceRow) => {
-    openInvoicePdfInNewTab(buildPdfInvoice(row));
-  };
-
-  const handleDelete = async (shipmentId: string) => {
+  const handleDelete = async (invoiceId: string) => {
     const ok = confirm("Are you sure you want to delete this invoice?");
     if (!ok) return;
 
-    const res = await fetch(`/api/invoices/${shipmentId}`, { method: "DELETE" });
+    const res = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}`, { method: "DELETE" });
+    const j = await res.json().catch(() => ({}));
+
     if (!res.ok) {
-      alert("Failed to delete invoice");
+      alert(j.message || "Failed to delete invoice");
       return;
     }
     await onSaved();
   };
-
-  const modalShipmentsForCreate = useMemo(() => {
-    // allow creating invoice for any shipment; if you want ONLY non-invoiced, filter here:
-    // const invoiced = new Set(invoices.map(i => i.shipmentId));
-    // return shipments.filter(s => !invoiced.has(s.id));
-    return shipments.map((s) => ({
-      id: s.id,
-      reference: s.reference,
-      customerName: s.customerName,
-      amount: s.amount,
-      currency: s.currency,
-    }));
-  }, [shipments]);
 
   return (
     <div className="space-y-6">
       <CreateInvoiceModal
         isOpen={isModalOpen}
         mode={modalMode}
-        shipmentId={editingShipmentId}
-        shipments={modalShipmentsForCreate}
+        invoiceId={editingInvoiceId}
         onClose={closeModal}
         onSaved={onSaved}
       />
@@ -257,14 +228,12 @@ const BillingPage = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Billing & Invoices</h1>
-          <p className="text-gray-500 mt-1">Invoices are generated from shipments and saved for editing</p>
+          <p className="text-gray-500 mt-1">Invoices are created from shipments (multiple invoices per shipment supported)</p>
         </div>
-
         <button
           onClick={openCreateModal}
           type="button"
           className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 shadow-sm transition-colors"
-          disabled={isLoadingShipments}
         >
           <Plus className="w-4 h-4 mr-2" />
           Create Invoice
@@ -285,7 +254,7 @@ const BillingPage = () => {
 
         <Card className="p-6 flex items-center justify-between border-l-4 border-blue-500">
           <div>
-            <p className="text-sm font-medium text-gray-500 mb-1">Outstanding</p>
+            <p className="text-sm font-medium text-gray-500 mb-1">Outstanding (Balance)</p>
             <p className="text-2xl font-bold text-gray-900">
               {formatCurrency(totals.outstandingAmount, totals.currency)}
             </p>
@@ -298,7 +267,7 @@ const BillingPage = () => {
         <Card className="p-6 flex items-center justify-between border-l-4 border-red-500 relative overflow-hidden">
           <div className="bg-red-50 absolute inset-0 opacity-10 pointer-events-none"></div>
           <div className="relative z-10">
-            <p className="text-sm font-medium text-gray-500 mb-1">Overdue</p>
+            <p className="text-sm font-medium text-gray-500 mb-1">Overdue (Balance)</p>
             <p className="text-2xl font-bold text-red-600">
               {formatCurrency(totals.overdueAmount, totals.currency)}
             </p>
@@ -321,47 +290,15 @@ const BillingPage = () => {
         </Card>
       </div>
 
-      {/* Aging Report */}
+      {/* Aging */}
       <Card className="p-6">
-        <h3 className="font-bold text-gray-900 mb-6">Aging Report</h3>
-
+        <h3 className="font-bold text-gray-900 mb-6">Aging Report (Balance)</h3>
         <div className="relative pt-2 pb-6">
           <div className="flex h-3 rounded-full overflow-hidden w-full bg-gray-100">
             <div style={{ width: `${aging.pct(aging.b0_30)}%` }} className="bg-green-500 h-full"></div>
             <div style={{ width: `${aging.pct(aging.b31_60)}%` }} className="bg-amber-400 h-full"></div>
             <div style={{ width: `${aging.pct(aging.b61_90)}%` }} className="bg-orange-500 h-full"></div>
             <div style={{ width: `${aging.pct(aging.b90p)}%` }} className="bg-red-500 h-full"></div>
-          </div>
-
-          <div className="flex justify-between mt-4 text-center">
-            <div className="w-1/4">
-              <div className="text-xs font-semibold text-gray-500">0-30 days</div>
-              <div className="text-sm font-bold text-gray-900">
-                {formatCurrency(aging.b0_30, totals.currency)}
-              </div>
-              <div className="h-1 w-full bg-green-500 mt-1 rounded-full opacity-50"></div>
-            </div>
-            <div className="w-[15%]">
-              <div className="text-xs font-semibold text-gray-500">31-60 days</div>
-              <div className="text-sm font-bold text-gray-900">
-                {formatCurrency(aging.b31_60, totals.currency)}
-              </div>
-              <div className="h-1 w-full bg-amber-400 mt-1 rounded-full opacity-50"></div>
-            </div>
-            <div className="w-[10%]">
-              <div className="text-xs font-semibold text-gray-500">61-90 days</div>
-              <div className="text-sm font-bold text-gray-900">
-                {formatCurrency(aging.b61_90, totals.currency)}
-              </div>
-              <div className="h-1 w-full bg-orange-500 mt-1 rounded-full opacity-50"></div>
-            </div>
-            <div className="w-1/2">
-              <div className="text-xs font-semibold text-gray-500">90+ days</div>
-              <div className="text-sm font-bold text-gray-900">
-                {formatCurrency(aging.b90p, totals.currency)}
-              </div>
-              <div className="h-1 w-full bg-red-500 mt-1 rounded-full opacity-50"></div>
-            </div>
           </div>
         </div>
       </Card>
@@ -389,9 +326,11 @@ const BillingPage = () => {
               <thead className="bg-gray-50 text-gray-500 uppercase font-semibold text-xs border-b border-gray-200">
                 <tr>
                   <th className="px-6 py-4">Invoice No.</th>
-                  <th className="px-6 py-4">Customer</th>
                   <th className="px-6 py-4">Shipment</th>
-                  <th className="px-6 py-4">Amount</th>
+                  <th className="px-6 py-4">Customer</th>
+                  <th className="px-6 py-4">Invoice Amount</th>
+                  <th className="px-6 py-4">Paid</th>
+                  <th className="px-6 py-4">Balance</th>
                   <th className="px-6 py-4">Issue Date</th>
                   <th className="px-6 py-4">Due Date</th>
                   <th className="px-6 py-4">Status</th>
@@ -402,71 +341,78 @@ const BillingPage = () => {
               <tbody className="divide-y divide-gray-100">
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
+                    <td colSpan={10} className="px-6 py-8 text-center text-gray-500">
                       No invoices found.
                     </td>
                   </tr>
                 )}
 
-                {filtered.map((row, idx) => {
-                  const rowKey = `${row.shipmentId || "noShipment"}-${row.invoiceNumber || "noInv"}-${idx}`;
-                  return (
-                    <tr key={rowKey} className="hover:bg-gray-50 transition-colors">
+                {filtered.map((row) => (
+                  <tr key={row.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 font-medium text-gray-900">{row.invoiceNumber}</td>
 
-                      <td className="px-6 py-4 font-medium text-gray-900">{row.invoiceNumber}</td>
-                      <td className="px-6 py-4 text-gray-700">{row.customerName}</td>
+                    <td className="px-6 py-4">
+                      <Link
+                        href={`/shipments/${row.shipmentId}`}
+                        className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-mono hover:bg-gray-200 inline-block"
+                      >
+                        {row.shipmentRef || row.shipmentId}
+                      </Link>
+                    </td>
 
-                      <td className="px-6 py-4">
-                        <Link
-                          href={`/shipments/${row.shipmentId}`}
-                          className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-mono hover:bg-gray-200 inline-block"
+                    <td className="px-6 py-4 text-gray-700">{row.customerName}</td>
+
+                    <td className="px-6 py-4 font-bold text-gray-900">
+                      {formatCurrency(row.amount, row.currency)}
+                    </td>
+
+                    <td className="px-6 py-4 text-gray-700">
+                      {formatCurrency(row.paidAmount, row.currency)}
+                    </td>
+
+                    <td className="px-6 py-4 font-semibold text-gray-900">
+                      {formatCurrency(row.balanceAmount, row.currency)}
+                    </td>
+
+                    <td className="px-6 py-4 text-gray-600">{row.issueDate}</td>
+                    <td className="px-6 py-4 text-gray-600">{row.dueDate}</td>
+
+                    <td className="px-6 py-4">
+                      <StatusBadge status={row.status as any} />
+                    </td>
+
+                    <td className="px-6 py-4 text-right">
+                      <div className="inline-flex items-center gap-3">
+                        <button
+                          onClick={() => handleDownload(row)}
+                          className="text-gray-400 hover:text-blue-600"
+                          title="Download Invoice PDF"
+                          type="button"
                         >
-                          {row.shipmentRef}
-                        </Link>
-                      </td>
+                          <Download className="w-4 h-4" />
+                        </button>
 
-                      <td className="px-6 py-4 font-bold text-gray-900">
-                        {formatCurrency(row.amount, row.currency)}
-                      </td>
+                        <button
+                          onClick={() => openEditModal(row.id)}
+                          className="text-gray-400 hover:text-gray-900"
+                          title="Edit Invoice"
+                          type="button"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
 
-                      <td className="px-6 py-4 text-gray-600">{row.issueDate}</td>
-                      <td className="px-6 py-4 text-gray-600">{row.dueDate}</td>
-
-                      <td className="px-6 py-4">
-                        <StatusBadge status={row.status as any} />
-                      </td>
-
-                      <td className="px-6 py-4 text-right">
-                        <div className="inline-flex items-center gap-3">
-                          <button
-                            onClick={() => handleDownload(row)}
-                            className="text-gray-900 "
-                            title="Download Invoice PDF"
-                          >
-                            <Download className="w-4 h-4" />
-                          </button>
-
-                          <button
-                            onClick={() => openEditModal(row.shipmentId)}
-                            className="text-blue-600 "
-                            title="Edit Invoice"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-
-                          <button
-                            onClick={() => handleDelete(row.shipmentId)}
-                            className="text-red-600"
-                            title="Delete Invoice"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-
+                        <button
+                          onClick={() => handleDelete(row.id)}
+                          className="text-gray-400 hover:text-red-600"
+                          title="Delete Invoice"
+                          type="button"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

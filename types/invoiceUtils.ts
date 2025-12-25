@@ -129,10 +129,11 @@ function calcItem(item: InvoiceLineItem) {
   const taxable = Number(item.taxableValue ?? qty * rate);
 
   // If amount exists, treat it as (taxable + GST)
-  const gstAmt =
-    typeof item.amount === "number"
-      ? Number(item.amount - taxable)
-      : Number(taxable * (taxRate / 100));
+  // const gstAmt =
+  //   typeof item.amount === "number"
+  //     ? Number(item.amount - taxable)
+  //     : Number(taxable * (taxRate / 100));
+  const gstAmt = Number(taxable * (taxRate / 100));
 
   const total = taxable + gstAmt;
 
@@ -320,6 +321,21 @@ export function buildInvoicePdf(invoice: Invoice): jsPDF {
   const tdsAmount = Number(invoice.tdsAmount || 0);
   const netPayable =
     typeof invoice.amount === "number" ? Number(invoice.amount) : invoiceTotal - tdsAmount;
+      // Paid / Balance (from payments)
+  const paidAmount = Number((invoice as any).paidAmount || 0);
+  const balanceAmount =
+    typeof (invoice as any).balanceAmount === "number"
+      ? Number((invoice as any).balanceAmount)
+      : Math.max(0, netPayable - paidAmount);
+
+  if (paidAmount > 0) {
+    totalsLine("Paid Amount", money(paidAmount, currency), y);
+    y += 14;
+
+    totalsLine("Balance Due", money(balanceAmount, currency), y, true);
+    y += 18;
+  }
+
 
   // FIX: consistent columns for totals
   const totalsRightX = pageW - margin;

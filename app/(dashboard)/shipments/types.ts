@@ -171,7 +171,25 @@ export type Shipment = {
   events: ShipmentEvent[];
 
   financials: ShipmentFinancials;
+  payments: Payment[]; // Added
+  invoices?: Array<{
+    id: string;
+    invoiceNumber: string;
+    amount: number;
+    currency: string;
+    status: string;
+  }>;
 
   createdAt?: string;
   updatedAt?: string;
+};
+export type Payment = {
+  id: string;
+  amount: number;
+  currency: string;
+  method: "UPI" | "CASH" | "ACCOUNT" | "CHEQUE" | "OTHER";
+  transactionNum?: string | null;
+  date: string; // YYYY-MM-DD
+  notes?: string | null;
+  status: "PENDING" | "COMPLETED" | "FAILED";
 };

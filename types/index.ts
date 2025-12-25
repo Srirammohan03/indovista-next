@@ -26,3 +26,48 @@ export interface AuthUser {
   role: Role;
   email?: string | null;
 }
+export type InvoiceLineItem = {
+  description: string;
+  hsnCode?: string;
+  quantity: number;
+  rate: number;
+  taxRate?: number;
+  taxableValue?: number;
+  amount?: number; // taxable + GST (optional)
+};
+
+export type Payment = {
+  id: string;
+  shipmentId: string;
+  invoiceId?: string | null;
+  amount: number;
+  currency: string;
+  method: "UPI" | "CASH" | "ACCOUNT" | "CHEQUE" | "OTHER";
+  transactionNum?: string | null;
+  date: string;
+  notes?: string | null;
+  status: "PENDING" | "COMPLETED" | "FAILED";
+};
+
+export type Invoice = {
+  id: string;
+  shipmentId: string;
+  invoiceNumber: string;
+  customerName: string;
+  customerGstin?: string | null;
+  placeOfSupply?: string | null;
+  issueDate: string;
+  dueDate: string;
+  currency: string;
+  tdsRate: number;
+  status: string; // DRAFT/SENT/PAID/OVERDUE
+  items: InvoiceLineItem[];
+  subtotal: number;
+  totalTax: number;
+  tdsAmount: number;
+  amount: number;
+  shipmentRef?: string | null;
+  payments?: Payment[];
+   paidAmount?: number;
+  balanceAmount?: number;
+};

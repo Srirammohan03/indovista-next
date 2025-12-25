@@ -13,13 +13,7 @@ const pad3 = (n: number) => String(n).padStart(3, "0");
 function refPrefix(direction: string, commodity: string) {
   const dir = direction === "IMPORT" ? "IMP" : "EXP";
   const com =
-    commodity === "FROZEN"
-      ? "FZ"
-      : commodity === "SPICE"
-      ? "SP"
-      : commodity === "BOTH"
-      ? "MX"
-      : "OT";
+    commodity === "FROZEN" ? "FZ" : commodity === "SPICE" ? "SP" : commodity === "BOTH" ? "MX" : "OT";
   return `${dir}-${com}-`;
 }
 
@@ -28,7 +22,7 @@ async function nextShipmentId(year: number) {
 
   const last = await prisma.shipment.findFirst({
     where: { id: { startsWith: prefix } },
-    orderBy: { id: "desc" }, // safe due to pad3
+    orderBy: { id: "desc" },
     select: { id: true },
   });
 
@@ -41,7 +35,7 @@ async function nextReference(direction: string, commodity: string) {
 
   const last = await prisma.shipment.findFirst({
     where: { reference: { startsWith: prefix } },
-    orderBy: { reference: "desc" }, // safe due to pad3
+    orderBy: { reference: "desc" },
     select: { reference: true },
   });
 
@@ -49,12 +43,6 @@ async function nextReference(direction: string, commodity: string) {
   return `${prefix}${pad3((Number.isFinite(lastNum) ? lastNum : 0) + 1)}`;
 }
 
-/**
- * Resolve a currencyId from:
- * 1) payload financials.currency (code or number)
- * 2) customer.currency (code)
- * 3) fallback "INR"
- */
 async function resolveCurrencyId(customerId: string, payloadCurrency: any) {
   let cur: any = payloadCurrency;
 
@@ -66,7 +54,6 @@ async function resolveCurrencyId(customerId: string, payloadCurrency: any) {
     cur = c?.currency || "INR";
   }
 
-  // allow numeric id
   if (typeof cur === "number") return cur;
 
   const code = clean(cur).toUpperCase();
@@ -76,9 +63,7 @@ async function resolveCurrencyId(customerId: string, payloadCurrency: any) {
   });
 
   if (!row) {
-    throw new Error(
-      `Currency '${code}' not found in Currency master. Add it in Currency table and try again.`
-    );
+    throw new Error(`Currency '${code}' not found in Currency master. Add it in Currency table and try again.`);
   }
 
   return row.id;
@@ -115,7 +100,6 @@ export async function POST(req: Request) {
       return new NextResponse("Missing origin/destination city/country", { status: 400 });
     }
 
-    // optional vehicle/driver validation (only if provided)
     const vehicleId = body.vehicleId ? clean(body.vehicleId) : null;
     const driverId = body.driverId ? clean(body.driverId) : null;
 
@@ -157,11 +141,8 @@ export async function POST(req: Request) {
 
     const year = new Date().getFullYear();
 
-    // retry to avoid collisions in concurrent create
     for (let attempt = 0; attempt < 5; attempt++) {
       const shipmentId = await nextShipmentId(year);
-
-      // ✅ FIX: generate reference if missing/blank OR not provided at all
       const incomingRef = clean(body.reference);
       const finalRef = incomingRef ? incomingRef : await nextReference(direction, commodity);
 
@@ -233,7 +214,6 @@ export async function POST(req: Request) {
 
         return NextResponse.json(created);
       } catch (e: any) {
-        // unique collision (id/reference). retry.
         if (e?.code === "P2002") continue;
         throw e;
       }
@@ -247,7 +227,6 @@ export async function POST(req: Request) {
 
 export async function GET() {
   try {
-    // ✅ IMPORTANT: avoid fragile `include: { originPort: ... }` relation names
     const rows = await prisma.shipment.findMany({
       orderBy: { createdAt: "desc" },
       select: {
@@ -271,35 +250,73 @@ export async function GET() {
         eta: true,
 
         vehicleId: true,
+
+        // ✅ billing defaults
+        createdAt: true,
+        revenue: true,
+
+        currency: { select: { currencyCode: true } },
       },
     });
 
     const customerIds = Array.from(new Set(rows.map((r) => r.customerId).filter(Boolean)));
     const portIds = Array.from(
-      new Set(
-        rows
-          .flatMap((r) => [r.originPortId, r.destPortId])
-          .filter((x): x is number => typeof x === "number")
-      )
+      new Set(rows.flatMap((r) => [r.originPortId, r.destPortId]).filter((x): x is number => typeof x === "number"))
     );
     const vehicleIds = Array.from(new Set(rows.map((r) => r.vehicleId).filter(Boolean))) as string[];
 
+    const shipmentIds = rows.map((r) => r.id);
+
+    const invoices = shipmentIds.length
+      ? await prisma.shipmentInvoice.findMany({
+          where: { shipmentId: { in: shipmentIds } },
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            shipmentId: true,
+            invoiceNumber: true,
+            status: true,
+            amount: true,
+            currency: true,
+            issueDate: true,
+            dueDate: true,
+          },
+        })
+      : [];
+
+    const latestInvoiceByShipment = new Map<string, (typeof invoices)[number]>();
+    for (const inv of invoices) {
+      if (!latestInvoiceByShipment.has(inv.shipmentId)) {
+        latestInvoiceByShipment.set(inv.shipmentId, inv);
+      }
+    }
+
     const [customers, ports, vehicles] = await Promise.all([
       customerIds.length
-        ? prisma.customer.findMany({ where: { id: { in: customerIds } }, select: { id: true, companyName: true } })
+        ? prisma.customer.findMany({
+            where: { id: { in: customerIds } },
+            // ✅ add fields needed by billing modal (must exist in your schema)
+            select: { id: true, companyName: true, kycStatus: true, sanctionsCheck: true },
+          })
         : Promise.resolve([]),
       portIds.length
-        ? prisma.port.findMany({ where: { id: { in: portIds } }, select: { id: true, code: true } })
+        ? prisma.port.findMany({
+            where: { id: { in: portIds } },
+            select: { id: true, code: true },
+          })
         : Promise.resolve([]),
       vehicleIds.length
         ? prisma.vehicle.findMany({
             where: { id: { in: vehicleIds } },
-            include: { drivers: { include: { driver: true } } }, // expects Vehicle.drivers -> VehicleDriver -> driver
+            include: { drivers: { include: { driver: true } } },
           })
         : Promise.resolve([]),
     ]);
 
-    const customerMap = new Map(customers.map((c) => [c.id, c.companyName]));
+    const customerMap = new Map(customers.map((c: any) => [c.id, c.companyName]));
+    const gstinMap = new Map(customers.map((c: any) => [c.id, c.gstin || ""]));
+    const posMap = new Map(customers.map((c: any) => [c.id, c.placeOfSupply || ""]));
+
     const portMap = new Map(ports.map((p) => [p.id, p.code]));
 
     const vehicleMap = new Map(
@@ -318,35 +335,62 @@ export async function GET() {
       ])
     );
 
-    
-
     return NextResponse.json(
-      rows.map((s) => ({
-        id: s.id,
-        reference: s.reference || "",
-        masterDoc: s.masterDoc || "",
-        customer: customerMap.get(s.customerId) || "",
+      rows.map((s: any) => {
+        const latest = latestInvoiceByShipment.get(s.id) || null;
+        const currencyCode = s.currency?.currencyCode || "INR";
 
-        origin: {
-          code: s.originPortId ? portMap.get(s.originPortId) || fallbackCode(s.originCity) : fallbackCode(s.originCity),
-          city: s.originCity || "",
-          country: s.originCountry || "",
-        },
-        destination: {
-          code: s.destPortId ? portMap.get(s.destPortId) || fallbackCode(s.destCity) : fallbackCode(s.destCity),
-          city: s.destCity || "",
-          country: s.destCountry || "",
-        },
+        return {
+          id: s.id,
+          reference: s.reference || "",
+          masterDoc: s.masterDoc || "",
 
-        mode: s.mode,
-        direction: s.direction,
-        commodity: s.commodity,
-        status: s.status,
-        slaStatus: s.slaStatus,
-        eta: s.eta ? s.eta.toISOString().slice(0, 10) : "",
+          // ✅ keep old field + add new
+          customer: customerMap.get(s.customerId) || "",
+          customerName: customerMap.get(s.customerId) || "",
 
-        vehicle: s.vehicleId ? vehicleMap.get(s.vehicleId) || null : null,
-      })),
+          // ✅ billing fields
+          customerGstin: gstinMap.get(s.customerId) || "",
+          placeOfSupply: posMap.get(s.customerId) || "",
+          createdAt: s.createdAt ? s.createdAt.toISOString() : "",
+          amount: Number((latest?.amount ?? s.revenue) || 0),
+          currency: (latest?.currency || currencyCode) as string,
+
+          currencyCode: currencyCode,
+
+          origin: {
+            code: s.originPortId ? portMap.get(s.originPortId) || fallbackCode(s.originCity) : fallbackCode(s.originCity),
+            city: s.originCity || "",
+            country: s.originCountry || "",
+          },
+          destination: {
+            code: s.destPortId ? portMap.get(s.destPortId) || fallbackCode(s.destCity) : fallbackCode(s.destCity),
+            city: s.destCity || "",
+            country: s.destCountry || "",
+          },
+
+          mode: s.mode,
+          direction: s.direction,
+          commodity: s.commodity,
+          status: s.status,
+          slaStatus: s.slaStatus,
+          eta: s.eta ? s.eta.toISOString().slice(0, 10) : "",
+
+          invoice: latest
+            ? {
+                id: latest.id,
+                invoiceNumber: latest.invoiceNumber,
+                status: latest.status,
+                amount: Number(latest.amount || 0),
+                currency: latest.currency,
+                issueDate: latest.issueDate ? latest.issueDate.toISOString().slice(0, 10) : "",
+                dueDate: latest.dueDate ? latest.dueDate.toISOString().slice(0, 10) : "",
+              }
+            : null,
+
+          vehicle: s.vehicleId ? vehicleMap.get(s.vehicleId) || null : null,
+        };
+      }),
       { headers: noStoreHeaders }
     );
   } catch (e: any) {

@@ -179,6 +179,9 @@ export interface Invoice {
   customerName: string;
   customerGstin?: string;
   placeOfSupply?: string;
+  paidAmount: number;
+  balanceAmount: number;
+  shipmentId: string;
   shipmentRef: string;
   issueDate: string;
   dueDate: string;

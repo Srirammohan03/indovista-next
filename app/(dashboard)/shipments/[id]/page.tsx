@@ -1,5 +1,4 @@
 "use client";
-
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -25,10 +24,8 @@ import {
   Phone,
   BadgeInfo,
 } from "lucide-react";
-
 import { ShipmentEvent, ShipmentDocument, Shipment } from "../types";
 import { formatIST, prettyStatus } from "@/lib/datetime";
-
 import { ShipmentEditModal } from "@/app/(dashboard)/shipments/components/ShipmentEditModal";
 import { UpdateStatusModal } from "@/app/(dashboard)/shipments/components/UpdateStatusModal";
 import { CargoEditModal } from "@/app/(dashboard)/shipments/components/CargoEditModal";
@@ -37,23 +34,42 @@ import { EditDocumentModal } from "@/app/(dashboard)/shipments/components/EditDo
 import { FinancialEditModal } from "@/app/(dashboard)/shipments/components/FinancialEditModal";
 import { VehicleDriverAssignModal } from "@/app/(dashboard)/shipments/components/VehicleDriverAssignModal";
 import { CreateQuoteButton } from "@/components/CreateQuoteButton";
-
-
+import { CreateInvoiceButton } from "@/components/CreateInvoiceButton";
+import { AddPaymentModal } from "@/components/AddPaymentModal";
 
 /* -------------------- helpers -------------------- */
 const modeIcon = (m: any) =>
-  m === "ROAD" ? <Truck className="w-4 h-4" /> : m === "SEA" ? <Ship className="w-4 h-4" /> : <Plane className="w-4 h-4" />;
+  m === "ROAD" ? (
+    <Truck className="w-4 h-4" />
+  ) : m === "SEA" ? (
+    <Ship className="w-4 h-4" />
+  ) : (
+    <Plane className="w-4 h-4" />
+  );
+
+const formatCurrency = (amount: number, currency: string) => {
+  const safe = Number(amount || 0);
+  const cur = String(currency || "INR").toUpperCase();
+  try {
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: cur,
+      maximumFractionDigits: 2,
+    }).format(safe);
+  } catch {
+    return `${safe.toFixed(2)} ${cur}`;
+  }
+};
 
 /* -------------------- Tabs -------------------- */
-
 const OverviewTab = ({ shipment }: { shipment: Shipment }) => (
   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
     <Card className="md:col-span-2">
-      <h3 className="font-semibold text-gray-900 mb-4 border-b border-gray-200 pb-2">Route Information</h3>
-
+      <h3 className="font-semibold text-gray-900 mb-4 border-b border-gray-200 pb-2">
+        Route Information
+      </h3>
       <div className="flex flex-col md:flex-row justify-between items-center gap-8 relative">
         <div className="hidden md:block absolute top-1/2 left-20 right-20 h-0.5 bg-gray-200 -z-10" />
-
         <div className="text-center bg-white p-2">
           <div className="text-sm text-gray-500 mb-1">Origin</div>
           <div className="text-xl font-bold text-gray-900">{shipment.origin.code}</div>
@@ -61,7 +77,6 @@ const OverviewTab = ({ shipment }: { shipment: Shipment }) => (
             {shipment.origin.city}, {shipment.origin.country}
           </div>
         </div>
-
         <div className="flex flex-col items-center bg-white p-2">
           <div className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-bold mb-2 inline-flex items-center gap-2">
             {modeIcon(shipment.mode)} {shipment.mode} • {shipment.masterDoc || "No BL / Master"}
@@ -69,7 +84,6 @@ const OverviewTab = ({ shipment }: { shipment: Shipment }) => (
           <div className="text-xs text-gray-500">ETD: {formatIST(shipment.etd)}</div>
           <div className="text-xs text-gray-500">ETA: {formatIST(shipment.eta)}</div>
         </div>
-
         <div className="text-center bg-white p-2">
           <div className="text-sm text-gray-500 mb-1">Destination</div>
           <div className="text-xl font-bold text-gray-900">{shipment.destination.code}</div>
@@ -92,8 +106,7 @@ const OverviewTab = ({ shipment }: { shipment: Shipment }) => (
           <span className="text-sm text-gray-500">Temperature Req</span>
           <span className="text-sm font-medium flex items-center gap-1 text-blue-600">
             <Thermometer className="w-4 h-4" />
-            {/* {shipment.temperature?.setPoint ?? 0} deg{shipment.temperature?.unit ?? "C"}  */}
-            {shipment.temperature?.range ?? "Ambient / N/A"}
+            {shipment.temperature?.range?.trim() ? shipment.temperature.range : "Ambient / N/A"}
           </span>
         </div>
 
@@ -154,7 +167,9 @@ export const TimelineTab = ({
 
   const vehicleLine = shipment.vehicle
     ? `${shipment.vehicle.name} (${shipment.vehicle.number}) • Driver: ${
-        shipment.vehicle.assignedDrivers?.length ? shipment.vehicle.assignedDrivers.map((d) => d.name).join(", ") : "Not assigned"
+        shipment.vehicle.assignedDrivers?.length
+          ? shipment.vehicle.assignedDrivers.map((d) => d.name).join(", ")
+          : "Not assigned"
       }`
     : "No vehicle assigned";
 
@@ -163,9 +178,7 @@ export const TimelineTab = ({
       <div className="flex items-start justify-between gap-3 mb-6">
         <div>
           <h3 className="font-semibold text-gray-900">Status History</h3>
-          <p className="text-sm text-gray-500 mt-1">
-            Add a new status with timestamp. It will update Shipment status + timeline.
-          </p>
+          <p className="text-sm text-gray-500 mt-1">Add a new status with timestamp. It will update Shipment status + timeline.</p>
           <div className="mt-2 text-xs text-gray-500">
             <span className="font-semibold text-gray-700">Vehicle:</span> {vehicleLine}
           </div>
@@ -181,18 +194,13 @@ export const TimelineTab = ({
       </div>
 
       <div className="relative border-l-2 border-gray-200 ml-3 space-y-8 pb-4">
-        {sortedEvents.length === 0 && (
-          <div className="pl-6 text-gray-500">No events recorded yet.</div>
-        )}
+        {sortedEvents.length === 0 && <div className="pl-6 text-gray-500">No events recorded yet.</div>}
 
         {sortedEvents.map((event) => {
           const safeStatus = prettyStatus(event.status);
           const safeDesc =
-            event.description?.trim() ||
-            `Status updated to "${safeStatus}". Add notes next time for clarity.`;
-          const safeLoc =
-            event.location?.trim() ||
-            `${shipment.origin.code} → ${shipment.destination.code}`;
+            event.description?.trim() || `Status updated to "${safeStatus}". Add notes next time for clarity.`;
+          const safeLoc = event.location?.trim() || `${shipment.origin.code} → ${shipment.destination.code}`;
           const safeUser = event.user?.trim() || "System / Operator";
 
           return (
@@ -202,18 +210,15 @@ export const TimelineTab = ({
                   event.status === "EXCEPTION" ? "bg-red-500" : "bg-blue-600"
                 }`}
               />
-
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
                 <div className="min-w-0">
                   <span className="text-sm font-bold text-gray-900 block">{safeStatus}</span>
                   <span className="text-sm text-gray-600 block break-words">{safeDesc}</span>
-
                   <div className="mt-2 text-xs text-gray-500">
                     <span className="font-semibold text-gray-700">Vehicle:</span>{" "}
                     {shipment.vehicle ? `${shipment.vehicle.name} (${shipment.vehicle.number})` : "Unassigned"}
                   </div>
                 </div>
-
                 <div className="text-right">
                   <div className="text-xs text-gray-500">{formatIST(event.timestamp)}</div>
                   <div className="text-xs text-gray-400 font-medium">
@@ -246,7 +251,6 @@ const DocumentsTab = ({
         <h3 className="font-semibold text-gray-900">Required Documentation</h3>
         <p className="text-sm text-gray-500 mt-1">Upload, edit metadata, or delete documents.</p>
       </div>
-
       <button
         onClick={onUploadClick}
         className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-semibold hover:bg-blue-700 flex items-center gap-2"
@@ -260,7 +264,10 @@ const DocumentsTab = ({
       {documents.length === 0 && <div className="text-gray-500 italic">No documents required or uploaded.</div>}
 
       {documents.map((doc) => (
-        <div key={doc.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 border border-gray-300 rounded-lg bg-gray-50">
+        <div
+          key={doc.id}
+          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 border border-gray-300 rounded-lg bg-gray-50"
+        >
           <div className="flex items-center gap-3 min-w-0">
             <div className="p-2 bg-white border border-gray-300 rounded">
               <FileText className="w-5 h-5 text-gray-500" />
@@ -280,17 +287,15 @@ const DocumentsTab = ({
 
           <div className="flex items-center gap-2 justify-end">
             <StatusBadge status={doc.status as any} />
-
             <button
               onClick={() => onEditClick(doc)}
-              className=" text-sm font-semibold text-blue-600 rounded-md hover:text-blue-400 inline-flex items-center gap-2"
+              className="text-sm font-semibold text-blue-600 rounded-md hover:text-blue-400 inline-flex items-center gap-2"
             >
               <Pencil className="w-4 h-4" />
             </button>
-
             <button
               onClick={() => onDeleteClick(doc)}
-              className=" text-sm text-red-600  rounded-md hover:text-red-400  inline-flex items-center gap-2"
+              className="text-sm text-red-600 rounded-md hover:text-red-400 inline-flex items-center gap-2"
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -308,7 +313,6 @@ const CargoTab = ({ shipment, onEditClick }: { shipment: Shipment; onEditClick: 
         <h3 className="font-semibold text-gray-900">Cargo & Pack</h3>
         <p className="text-sm text-gray-500 mt-1">Add / edit products, qty, weight, packaging.</p>
       </div>
-
       <button
         onClick={onEditClick}
         className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-semibold hover:bg-blue-700 inline-flex items-center gap-2"
@@ -390,13 +394,7 @@ const CargoTab = ({ shipment, onEditClick }: { shipment: Shipment; onEditClick: 
   </Card>
 );
 
-const VehicleDriverModeTab = ({
-  shipment,
-  onEditClick,
-}: {
-  shipment: Shipment;
-  onEditClick: () => void;
-}) => {
+const VehicleDriverModeTab = ({ shipment, onEditClick }: { shipment: Shipment; onEditClick: () => void }) => {
   const vehicle = shipment.vehicle;
   const shipmentDriver = (shipment as any).driver || null;
 
@@ -410,7 +408,6 @@ const VehicleDriverModeTab = ({
               Assign a vehicle/driver that matches the shipment mode. (Validation is enforced in the API.)
             </p>
           </div>
-
           <button
             onClick={onEditClick}
             className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-semibold hover:bg-blue-700 inline-flex items-center gap-2"
@@ -444,7 +441,6 @@ const VehicleDriverModeTab = ({
 
       <Card className="lg:col-span-2">
         <h3 className="font-semibold text-gray-900 mb-4 border-b border-gray-200 pb-2">Assigned Vehicle</h3>
-
         {!vehicle ? (
           <div className="text-sm text-gray-500">
             Vehicle is <span className="font-semibold">Unassigned</span>. Click{" "}
@@ -492,7 +488,6 @@ const VehicleDriverModeTab = ({
 
       <Card>
         <h3 className="font-semibold text-gray-900 mb-4 border-b border-gray-200 pb-2">Shipment Driver</h3>
-
         {!shipmentDriver ? (
           <div className="text-sm text-gray-500">
             Shipment driver is <span className="font-semibold">Not assigned</span>. (Optional)
@@ -506,7 +501,6 @@ const VehicleDriverModeTab = ({
                 {shipmentDriver.role || "Driver"} • {shipmentDriver.transportMode}
               </div>
             </div>
-
             {shipmentDriver.contactNumber ? (
               <a href={`tel:${shipmentDriver.contactNumber}`} className="inline-flex items-center gap-2 text-sm font-semibold text-blue-600">
                 <Phone className="w-4 h-4" /> {shipmentDriver.contactNumber}
@@ -514,7 +508,6 @@ const VehicleDriverModeTab = ({
             ) : (
               <div className="text-xs text-gray-400">No contact number</div>
             )}
-
             {shipmentDriver.licenseNumber ? (
               <div className="text-xs text-gray-500">
                 <span className="font-semibold text-gray-700">License:</span> {shipmentDriver.licenseNumber}
@@ -528,12 +521,10 @@ const VehicleDriverModeTab = ({
 };
 
 /* -------------------- Page -------------------- */
-
 export default function ShipmentDetail() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const qc = useQueryClient();
-  
 
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -545,30 +536,19 @@ export default function ShipmentDetail() {
   const [editDocOpen, setEditDocOpen] = useState(false);
   const [financialOpen, setFinancialOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [addPaymentOpen, setAddPaymentOpen] = useState(false);
+
   const [selectedDoc, setSelectedDoc] = useState<ShipmentDocument | null>(null);
 
-  // const { data: shipment, isLoading, isError, error } = useQuery<Shipment>({
-  //   queryKey: ["shipment", id],
-  //   queryFn: async () => {
-  //     const res = await fetch(`/api/shipments/${id}`);
-  //     if (!res.ok) throw new Error(await res.text());
-  //     return res.json();
-  //   },
-  //   enabled: !!id,
-  // });
   const { data: shipment, isLoading, isError, error } = useQuery<Shipment>({
-  queryKey: ["shipment", id],
-  queryFn: async () => {
-    const res = await fetch(`/api/shipments/${id}`, {
-      cache: "no-store", // 🔥 FIX: prevents Next.js from reusing old shipment
-    });
-
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
-  },
-  enabled: !!id,
-});
-
+    queryKey: ["shipment", id],
+    queryFn: async () => {
+      const res = await fetch(`/api/shipments/${id}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    enabled: !!id,
+  });
 
   const tabs = useMemo(
     () => [
@@ -585,6 +565,7 @@ export default function ShipmentDetail() {
   const refetchShipment = async () => {
     await qc.invalidateQueries({ queryKey: ["shipment", id] });
     await qc.invalidateQueries({ queryKey: ["shipments"] });
+    await qc.invalidateQueries({ queryKey: ["invoices"] });
   };
 
   const handleDeleteShipment = async () => {
@@ -597,7 +578,6 @@ export default function ShipmentDetail() {
       alert(await res.text());
       return;
     }
-
     await qc.invalidateQueries({ queryKey: ["shipments"] });
     router.push("/shipments");
   };
@@ -621,12 +601,19 @@ export default function ShipmentDetail() {
     return (
       <div className="p-8 text-center text-gray-500 space-y-2">
         <div>Shipment not found</div>
-        <div className="text-xs text-gray-400 break-words max-w-2xl mx-auto">
-          {(error as any)?.message || ""}
-        </div>
+        <div className="text-xs text-gray-400 break-words max-w-2xl mx-auto">{(error as any)?.message || ""}</div>
       </div>
     );
   }
+
+  const invoices = Array.isArray((shipment as any).invoices) ? (shipment as any).invoices : [];
+  const payments = Array.isArray((shipment as any).payments) ? (shipment as any).payments : [];
+
+  const currency = shipment.financials?.currency || invoices[0]?.currency || "INR";
+
+  const totalBilled = invoices.reduce((sum: number, inv: any) => sum + (inv.status !== "DRAFT" ? Number(inv.amount || 0) : 0), 0);
+  const totalPaid = payments.reduce((sum: number, p: any) => sum + (p.status === "COMPLETED" ? Number(p.amount || 0) : 0), 0);
+  const outstanding = totalBilled - totalPaid;
 
   return (
     <div className="space-y-6">
@@ -710,9 +697,7 @@ export default function ShipmentDetail() {
           <TimelineTab shipment={shipment} events={shipment.events || []} onUpdateClick={() => setStatusOpen(true)} />
         )}
 
-        {activeTab === "vehicle_driver" && (
-          <VehicleDriverModeTab shipment={shipment} onEditClick={() => setAssignOpen(true)} />
-        )}
+        {activeTab === "vehicle_driver" && <VehicleDriverModeTab shipment={shipment} onEditClick={() => setAssignOpen(true)} />}
 
         {activeTab === "documents" && (
           <DocumentsTab
@@ -728,46 +713,130 @@ export default function ShipmentDetail() {
 
         {activeTab === "cargo" && <CargoTab shipment={shipment} onEditClick={() => setCargoOpen(true)} />}
 
-        {activeTab === "billing" && (
-          <Card>
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6">
-              <div>
-                <h3 className="font-semibold text-gray-900">Financials</h3>
-                <p className="text-sm text-gray-500 mt-1">Edit currency, revenue, cost, invoice status.</p>
-              </div>
-                <CreateQuoteButton shipmentId={shipment.id} />
-              <button
-                onClick={() => setFinancialOpen(true)}
-                className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-semibold hover:bg-blue-700 inline-flex items-center gap-2"
-              >
-                <Pencil className="w-4 h-4" />
-                Edit Financials
-              </button>
-            </div>
+      {activeTab === "billing" && (
+  <Card>
+    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6">
+      <div>
+        <h3 className="font-semibold text-gray-900">Financials</h3>
+        <p className="text-sm text-gray-500 mt-1">
+          Keep shipment financials + manage invoices & payments below.
+        </p>
+      </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
-              <div className="p-4 bg-gray-50 rounded">
-                <div className="text-sm text-gray-500">Revenue</div>
-                <div className="text-2xl font-bold text-gray-900">
-                  {shipment.financials.currency} {shipment.financials.revenue}
+      <div className="flex flex-wrap gap-2">
+        <CreateQuoteButton shipmentId={shipment.id} />
+        <CreateInvoiceButton shipmentId={shipment.id} />
+        <button
+          onClick={() => setFinancialOpen(true)}
+          className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-semibold hover:bg-blue-700 inline-flex items-center gap-2"
+        >
+          <Pencil className="w-4 h-4" />
+          Edit Financials
+        </button>
+      </div>
+    </div>
+
+    {/* ✅ KEEP THIS SAME (Revenue / Cost / Margin) */}
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
+      <div className="p-4 bg-gray-50 rounded">
+        <div className="text-sm text-gray-500">Revenue</div>
+        <div className="text-2xl font-bold text-gray-900">
+          {formatCurrency(Number(shipment.financials?.revenue || 0), currency)}
+        </div>
+      </div>
+      <div className="p-4 bg-gray-50 rounded">
+        <div className="text-sm text-gray-500">Cost</div>
+        <div className="text-2xl font-bold text-gray-900">
+          {formatCurrency(Number(shipment.financials?.cost || 0), currency)}
+        </div>
+      </div>
+      <div className="p-4 bg-green-50 rounded border border-green-100">
+        <div className="text-sm text-green-700">Margin</div>
+        <div className="text-2xl font-bold text-green-800">
+          {formatCurrency(Number(shipment.financials?.margin || 0), currency)}
+        </div>
+        <div className="text-xs text-green-700 mt-2">
+          Invoice: {shipment.financials?.invoiceStatus || "DRAFT"}
+        </div>
+      </div>
+    </div>
+
+    {/* ✅ Billing Summary */}
+    <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
+      <div className="p-4 bg-gray-50 rounded">
+        <div className="text-sm text-gray-500">Total Billed</div>
+        <div className="text-xl font-bold text-gray-900">{formatCurrency(totalBilled, currency)}</div>
+      </div>
+      <div className="p-4 bg-gray-50 rounded">
+        <div className="text-sm text-gray-500">Total Paid</div>
+        <div className="text-xl font-bold text-gray-900">{formatCurrency(totalPaid, currency)}</div>
+      </div>
+      <div className="p-4 bg-yellow-50 rounded border border-yellow-100">
+        <div className="text-sm text-yellow-700">Outstanding</div>
+        <div className="text-xl font-bold text-yellow-800">{formatCurrency(outstanding, currency)}</div>
+      </div>
+    </div>
+
+    {/* ✅ Invoice List */}
+    <div className="mt-6">
+      <h3 className="font-semibold text-gray-900 mb-3">Invoices</h3>
+      {invoices.length === 0 ? (
+        <div className="text-gray-500">No invoices created yet.</div>
+      ) : (
+        <div className="space-y-3">
+          {invoices.map((inv: any) => (
+            <div key={inv.id} className="p-4 bg-gray-50 rounded border border-gray-200">
+              <div className="flex justify-between gap-3">
+                <div className="font-semibold text-gray-900">
+                  {inv.invoiceNumber} <span className="text-xs text-gray-500">({inv.status})</span>
                 </div>
+                <div className="font-bold">{formatCurrency(Number(inv.amount || 0), inv.currency || currency)}</div>
               </div>
-              <div className="p-4 bg-gray-50 rounded">
-                <div className="text-sm text-gray-500">Cost</div>
-                <div className="text-2xl font-bold text-gray-900">
-                  {shipment.financials.currency} {shipment.financials.cost}
-                </div>
-              </div>
-              <div className="p-4 bg-green-50 rounded border border-green-100">
-                <div className="text-sm text-green-700">Margin</div>
-                <div className="text-2xl font-bold text-green-800">
-                  {shipment.financials.currency} {shipment.financials.margin}
-                </div>
-                <div className="text-xs text-green-700 mt-2">Invoice: {shipment.financials.invoiceStatus}</div>
+              <div className="text-xs text-gray-500 mt-1">
+                Issue: {inv.issueDate || "-"} • Due: {inv.dueDate || "-"}
               </div>
             </div>
-          </Card>
-        )}
+          ))}
+        </div>
+      )}
+    </div>
+
+    {/* ✅ Payments */}
+    <div className="mt-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-gray-900">Payment History</h3>
+        <button
+          onClick={() => setAddPaymentOpen(true)}
+          className="px-3 py-2 bg-green-600 text-white rounded-md text-sm font-semibold hover:bg-green-700 flex items-center gap-2"
+        >
+          <Plus className="w-4 h-4" />
+          Add Payment
+        </button>
+      </div>
+
+      {payments.length === 0 ? (
+        <div className="text-gray-500">No payments recorded.</div>
+      ) : (
+        <div className="space-y-3">
+          {payments.map((p: any) => (
+            <div key={p.id} className="p-4 bg-gray-50 rounded border border-gray-200">
+              <div className="flex justify-between gap-3">
+                <span className="font-bold">{formatCurrency(Number(p.amount || 0), p.currency || currency)}</span>
+                <span className="text-xs">{p.date ? formatIST(p.date) : "-"}</span>
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                Method: {p.method || "-"} • Tx: {p.transactionNum || "-"} • Status: {p.status}
+                {p.invoiceId ? " • Applied: Yes" : " • Applied: No"}
+              </div>
+              {p.notes && <div className="text-xs text-gray-600 mt-1">{p.notes}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  </Card>
+)}
+
       </div>
 
       {/* Modals */}
@@ -791,19 +860,19 @@ export default function ShipmentDetail() {
           await refetchShipment();
         }}
       />
-      <VehicleDriverAssignModal
-  isOpen={assignOpen}
-  onClose={() => setAssignOpen(false)}
-  shipmentId={shipment.id}               // use real DB id
-  shipmentMode={shipment.mode as any}
-  currentVehicleId={shipment.vehicle?.id || null}
-  currentDriverId={(shipment as any).driver?.id || null}
-  onSaved={async () => {
-    setAssignOpen(false);
-    await refetchShipment();
-  }}
-/>
 
+      <VehicleDriverAssignModal
+        isOpen={assignOpen}
+        onClose={() => setAssignOpen(false)}
+        shipmentId={shipment.id}
+        shipmentMode={shipment.mode as any}
+        currentVehicleId={shipment.vehicle?.id || null}
+        currentDriverId={(shipment as any).driver?.id || null}
+        onSaved={async () => {
+          setAssignOpen(false);
+          await refetchShipment();
+        }}
+      />
 
       <CargoEditModal
         isOpen={cargoOpen}
@@ -847,12 +916,24 @@ export default function ShipmentDetail() {
         shipmentId={shipment.id}
         financials={{
           ...shipment.financials,
-          invoiceStatus: shipment.financials.invoiceStatus || "",
+          invoiceStatus: shipment.financials?.invoiceStatus || "DRAFT",
         }}
         onSaved={async () => {
           setFinancialOpen(false);
           await refetchShipment();
         }}
+      />
+
+      <AddPaymentModal
+        isOpen={addPaymentOpen}
+  onClose={() => setAddPaymentOpen(false)}
+  shipmentId={shipment.id}
+  currency={currency}
+  maxAmountHint={Math.max(outstanding, 0)}
+  onSaved={async () => {
+    setAddPaymentOpen(false);
+    await refetchShipment();
+  }}
       />
     </div>
   );

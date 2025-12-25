@@ -348,6 +348,7 @@ model Shipment {
   events        ShipmentEvent[]
   quotes        Quote[]
   shipmentInvoice ShipmentInvoice[]
+  payments      Payment[]
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
@@ -641,30 +642,61 @@ model QuoteCharge {
 }
 
 model ShipmentInvoice {
-  shipmentId     String   @id
-  shipment       Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  id            String     @id @default(cuid()) // ✅ TEMP: optional
+  shipmentId    String
+  invoiceNumber String     @unique
+  customerName  String
+  customerGstin String?
+  placeOfSupply String?
+  issueDate     DateTime
+  dueDate       DateTime
+  currency      String
+  tdsRate       Float      @default(0)
+  status        String     @default("DRAFT")
+  items         Json
+  subtotal      Float
+  totalTax      Float
+  tdsAmount     Float
+  amount        Float
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  shipment      Shipment   @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  payments      Payment[]
 
-  invoiceNumber  String
-  customerName   String
-  customerGstin  String?  @default("")
-  placeOfSupply  String?  @default("")
-
-  issueDate      DateTime
-  dueDate        DateTime
-
-  currency       String   @default("INR")
-  status         String   @default("DRAFT")
-  tdsRate        Float    @default(0)
-
-  items          Json
-
-  subtotal       Float    @default(0)
-  totalTax       Float    @default(0)
-  tdsAmount      Float    @default(0)
-  amount         Float    @default(0)
-
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  @@index([invoiceNumber])
+  @@index([shipmentId])
 }
+
+model Payment {
+  id             String        @id @default(cuid())
+  shipmentId     String
+  shipment       Shipment      @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  invoiceId      String?
+  invoice        ShipmentInvoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  amount         Float
+  currency       String
+  method         PaymentMethod
+  transactionNum String?
+  date           DateTime      @default(now())
+  notes          String?
+  status         PaymentStatus @default(PENDING)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([shipmentId])
+  @@index([invoiceId])
+}
+
+enum PaymentMethod {
+  UPI
+  CASH
+  ACCOUNT
+  CHEQUE
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+

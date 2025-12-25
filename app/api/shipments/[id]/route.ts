@@ -12,13 +12,12 @@ const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 const normalizeParam = (v: string) => clean(decodeURIComponent(v || ""));
 
 type RouteCtx = {
-  // Next.js 15: params is Promise
   params: Promise<{ id: string }> | { id: string };
 };
 
 async function getParamId(ctx: RouteCtx) {
   const p: any = ctx?.params;
-  const obj = typeof p?.then === "function" ? await p : p; // ✅ unwrap Promise if needed
+  const obj = typeof p?.then === "function" ? await p : p;
   return normalizeParam(obj?.id || "");
 }
 
@@ -29,14 +28,7 @@ const fallbackCode = (city?: string | null) => {
 };
 
 function defaultLocationForStatus(s: any, shipment: any) {
-  const originStages = [
-    "BOOKED",
-    "PICKED_UP",
-    "IN_TRANSIT_ORIGIN",
-    "AT_PORT_ORIGIN",
-    "CUSTOMS_EXPORT",
-    "ON_VESSEL",
-  ];
+  const originStages = ["BOOKED", "PICKED_UP", "IN_TRANSIT_ORIGIN", "AT_PORT_ORIGIN", "CUSTOMS_EXPORT", "ON_VESSEL"];
   const isOrigin = originStages.includes(String(s));
   const city = isOrigin ? shipment.originCity : shipment.destCity;
   const country = isOrigin ? shipment.originCountry : shipment.destCountry;
@@ -47,12 +39,6 @@ function defaultDescriptionForStatus(s: any) {
   return `Status updated to ${String(s).replaceAll("_", " ").toLowerCase()}`;
 }
 
-/**
- * Resolve currencyId from:
- * 1) payload financials.currency (code or number)
- * 2) customer.currency (code)
- * 3) fallback "INR"
- */
 async function resolveCurrencyId(customerId: string, payloadCurrency: any) {
   let cur: any = payloadCurrency;
 
@@ -73,9 +59,7 @@ async function resolveCurrencyId(customerId: string, payloadCurrency: any) {
   });
 
   if (!row) {
-    throw new Error(
-      `Currency '${code}' not found in Currency master. Add it in Currency table and try again.`
-    );
+    throw new Error(`Currency '${code}' not found in Currency master. Add it in Currency table and try again.`);
   }
 
   return row.id;
@@ -84,7 +68,6 @@ async function resolveCurrencyId(customerId: string, payloadCurrency: any) {
 async function findShipmentRecord(idOrRefRaw: string) {
   const idOrRef = normalizeParam(idOrRefRaw);
 
-  // 1) Try as String id
   try {
     const s = await prisma.shipment.findUnique({
       where: { id: idOrRef as any },
@@ -96,11 +79,8 @@ async function findShipmentRecord(idOrRefRaw: string) {
       },
     });
     if (s) return s;
-  } catch {
-    // ignore and try other ways
-  }
+  } catch {}
 
-  // 2) Try as Int id (if Prisma id is Int)
   if (/^\d+$/.test(idOrRef)) {
     try {
       const s = await prisma.shipment.findUnique({
@@ -113,12 +93,9 @@ async function findShipmentRecord(idOrRefRaw: string) {
         },
       });
       if (s) return s;
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
 
-  // 3) Fallback by reference
   return prisma.shipment.findFirst({
     where: { reference: idOrRef },
     include: {
@@ -134,7 +111,7 @@ async function shapeShipment(idOrRef: string) {
   const s: any = await findShipmentRecord(idOrRef);
   if (!s) return null;
 
-  const [originPort, destPort, incoterm, containerType, temperature, currency, vehicle, driver] =
+  const [originPort, destPort, incoterm, containerType, temperature, currency, vehicle, driver, invoices, payments] =
     await Promise.all([
       s.originPortId ? prisma.port.findUnique({ where: { id: s.originPortId } }) : Promise.resolve(null),
       s.destPortId ? prisma.port.findUnique({ where: { id: s.destPortId } }) : Promise.resolve(null),
@@ -151,6 +128,43 @@ async function shapeShipment(idOrRef: string) {
         : Promise.resolve(null),
 
       s.driverId ? prisma.driver.findUnique({ where: { id: s.driverId } }) : Promise.resolve(null),
+
+      // ✅ invoices for this shipment
+      prisma.shipmentInvoice.findMany({
+        where: { shipmentId: s.id },
+        orderBy: { createdAt: "desc" },
+        select: {
+           id: true,
+      shipmentId: true,
+      invoiceNumber: true,
+      status: true,
+      amount: true,
+      currency: true,
+      issueDate: true,
+      dueDate: true,
+      createdAt: true,
+        },
+      }),
+
+      // ✅ payments for this shipment
+      // If your Prisma model name is different, change shipmentPayment -> <yourModel>
+      prisma.payment.findMany({
+        where: { shipmentId: s.id },
+        orderBy: { date: "desc" },
+        select: {
+          id: true,
+      shipmentId: true,
+      invoiceId: true,
+      amount: true,
+      currency: true,
+      method: true,
+      transactionNum: true,
+      date: true,
+      notes: true,
+      status: true,
+      createdAt: true,
+        },
+      }),
     ]);
 
   const originCode = (originPort as any)?.code || fallbackCode(s.originCity);
@@ -188,14 +202,12 @@ async function shapeShipment(idOrRef: string) {
     etd: s.etd ? s.etd.toISOString().slice(0, 10) : "",
     eta: s.eta ? s.eta.toISOString().slice(0, 10) : "",
 
-    incoterm: incoterm
-      ? { id: (incoterm as any).id, code: (incoterm as any).code, name: (incoterm as any).name }
-      : null,
-
+    incoterm: incoterm ? { id: (incoterm as any).id, code: (incoterm as any).code, name: (incoterm as any).name } : null,
     containerType: containerType
       ? { id: (containerType as any).id, code: (containerType as any).code, name: (containerType as any).name }
       : null,
 
+    // ✅ make null when missing (UI fallback works)
     temperature: temperature
       ? {
           id: (temperature as any).id,
@@ -206,7 +218,7 @@ async function shapeShipment(idOrRef: string) {
           unit: (temperature as any).unit,
           alerts: 0,
         }
-      : { setPoint: 0, unit: "C", range: "", alerts: 0 },
+      : null,
 
     vehicle: vehicle
       ? {
@@ -270,6 +282,28 @@ async function shapeShipment(idOrRef: string) {
       user: e.user || "",
     })),
 
+    // ✅ NEW: invoices + payments (used by Shipment Detail Financials tab)
+    invoices: (invoices || []).map((inv: any) => ({
+      id: inv.id,
+      invoiceNumber: inv.invoiceNumber,
+      status: inv.status,
+      amount: Number(inv.amount || 0),
+      currency: inv.currency || (currency as any)?.currencyCode || s.customer?.currency || "INR",
+      issueDate: inv.issueDate ? inv.issueDate.toISOString().slice(0, 10) : "",
+      dueDate: inv.dueDate ? inv.dueDate.toISOString().slice(0, 10) : "",
+    })),
+
+    payments: (payments || []).map((p: any) => ({
+      id: p.id,
+      amount: Number(p.amount || 0),
+      currency: p.currency || (currency as any)?.currencyCode || s.customer?.currency || "INR",
+      date: p.date ? p.date.toISOString().slice(0, 10) : "",
+      method: p.method || "",
+      transactionNum: p.transactionNum || "",
+      status: p.status || "PENDING",
+      notes: p.notes || "",
+    })),
+
     financials: {
       currency: (currency as any)?.currencyCode || s.customer?.currency || "INR",
       revenue: s.revenue ?? 0,
@@ -301,7 +335,6 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
     if (!existing) return new NextResponse("Not found", { status: 404 });
 
     const id = existing.id;
-
     const nextMode = body.mode ? upper(body.mode, existing.mode) : existing.mode;
     const nextCustomerId = body.customerId ? clean(body.customerId) : existing.customerId;
 
@@ -312,6 +345,7 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
         return new NextResponse("Vehicle mode mismatch", { status: 400 });
       }
     }
+
     if (body.driverId !== undefined && body.driverId) {
       const d = await prisma.driver.findUnique({ where: { id: clean(body.driverId) } });
       if (!d) return new NextResponse("Invalid driverId", { status: 400 });
