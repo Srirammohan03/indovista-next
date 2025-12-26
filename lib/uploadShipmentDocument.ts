@@ -1,71 +1,37 @@
-import path from "path";
-import fs from "fs/promises";
+// lib/uploadShipmentDocument.ts
+const ALLOWED = ["application/pdf", "image/png", "image/jpeg"];
 
 function safeName(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
-}
-
-const ALLOWED = ["application/pdf", "image/png", "image/jpeg"];
-
-function isVercel() {
-  return process.env.VERCEL === "1" || !!process.env.VERCEL_ENV;
 }
 
 export async function uploadShipmentDocument(shipmentId: string, file: File) {
   const mime = file.type || "";
   if (!ALLOWED.includes(mime)) throw new Error("Only pdf/png/jpg allowed");
 
-  const ext =
-    mime === "application/pdf" ? "pdf" : mime === "image/png" ? "png" : "jpg";
-
-  const cleanShipmentId = safeName(shipmentId);
-  const cleanName = safeName(file.name || `document.${ext}`);
-  const fileName = `${Date.now()}_${cleanName}`;
-
-  // ✅ On Vercel: NEVER use filesystem
-  if (isVercel()) {
-    if (!process.env.BLOB_READ_WRITE_TOKEN) {
-      throw new Error(
-        "Vercel requires Blob upload. Missing BLOB_READ_WRITE_TOKEN in Vercel env vars (Production/Preview). Save + redeploy."
-      );
-    }
-
-    const { put } = await import("@vercel/blob");
-    const blob = await put(`shipments/${cleanShipmentId}/${fileName}`, file, {
-      access: "public",
-      contentType: mime,
-    });
-
-    return {
-      fileUrl: blob.url,
-      mimeType: mime,
-      fileSize: file.size,
-      originalName: file.name,
-      storage: "blob" as const,
-    };
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    // ✅ This prevents any fs.mkdir fallback ever
+    throw new Error(
+      "BLOB_READ_WRITE_TOKEN is missing at runtime on Vercel. Add it in Vercel Project → Settings → Environment Variables (Production/Preview) and redeploy."
+    );
   }
 
-  // ✅ VPS / Local filesystem
-//   const uploadDir = path.join(
-//     process.cwd(),
-//     "public",
-//     "uploads",
-//     "shipments",
-//     cleanShipmentId
-//   );
+  const cleanShipmentId = safeName(shipmentId);
+  const cleanName = safeName(file.name || "document");
+  const fileName = `${Date.now()}_${cleanName}`;
 
-//   await fs.mkdir(uploadDir, { recursive: true });
+  const { put } = await import("@vercel/blob");
 
-//   const buffer = Buffer.from(await file.arrayBuffer());
-//   const absPath = path.join(uploadDir, fileName);
+  const blob = await put(`shipments/${cleanShipmentId}/${fileName}`, file, {
+    access: "public",
+    contentType: mime,
+  });
 
-//   await fs.writeFile(absPath, buffer);
-
-//   return {
-//     fileUrl: `/uploads/shipments/${cleanShipmentId}/${fileName}`,
-//     mimeType: mime,
-//     fileSize: buffer.length,
-//     originalName: file.name,
-//     storage: "fs" as const,
-//   };
+  return {
+    fileUrl: blob.url,
+    mimeType: mime,
+    fileSize: file.size,
+    originalName: file.name,
+    storage: "blob" as const,
+  };
 }
