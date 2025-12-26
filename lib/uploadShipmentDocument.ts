@@ -5,19 +5,15 @@ function safeName(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
+const ALLOWED = ["application/pdf", "image/png", "image/jpeg"];
+
 export async function uploadShipmentDocument(
   shipmentId: string,
   file: File
-): Promise<{
-  fileUrl: string;
-  mimeType: string;
-  fileSize: number;
-  originalName: string;
-}> {
+) {
   const mime = file.type || "";
-  const allowed = ["application/pdf", "image/png", "image/jpeg"];
 
-  if (!allowed.includes(mime)) {
+  if (!ALLOWED.includes(mime)) {
     throw new Error("Only pdf/png/jpg allowed");
   }
 
@@ -49,6 +45,7 @@ export async function uploadShipmentDocument(
       mimeType: mime,
       fileSize: file.size,
       originalName: file.name,
+      storage: "blob" as const,
     };
   }
 
@@ -75,5 +72,6 @@ export async function uploadShipmentDocument(
     mimeType: mime,
     fileSize: buffer.length,
     originalName: file.name,
+    storage: "fs" as const,
   };
 }

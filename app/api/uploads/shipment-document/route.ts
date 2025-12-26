@@ -21,7 +21,7 @@ export async function POST(req: Request) {
     const result = await uploadShipmentDocument(shipmentId, file);
 
     return NextResponse.json(result);
-  } catch (err: any) {
-    return new NextResponse(err.message || "Upload failed", { status: 500 });
+  } catch (e: any) {
+    return new NextResponse(e?.message || "Upload failed", { status: 500 });
   }
 }
