@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { X, Loader2, Save } from "lucide-react";
+import { X, Loader2, Save, Upload } from "lucide-react";
 
 type Props = {
   isOpen: boolean;
@@ -14,10 +14,7 @@ type Props = {
 function getNowLocal() {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
-  // datetime-local expects: YYYY-MM-DDTHH:mm
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-    d.getHours()
-  )}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export const UpdateStatusModal: React.FC<Props> = ({
@@ -31,13 +28,15 @@ export const UpdateStatusModal: React.FC<Props> = ({
 
   const [form, setForm] = useState({
     status: currentStatus,
-    timestamp: getNowLocal(), // datetime-local
+    timestamp: getNowLocal(),
     location: "",
     description: "",
     user: "Operator",
   });
 
-  // ✅ Reset form every time modal opens so timestamp is always "now"
+  // ✅ Proof file required for DELIVERED
+  const [proofFile, setProofFile] = useState<File | null>(null);
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -48,10 +47,19 @@ export const UpdateStatusModal: React.FC<Props> = ({
       description: "",
       user: "Operator",
     });
+
+    setProofFile(null);
   }, [isOpen, currentStatus]);
 
   const save = useCallback(async () => {
     if (saving) return;
+
+    const isDelivered = String(form.status).toUpperCase() === "DELIVERED";
+
+    if (isDelivered && !proofFile) {
+      alert("Proof is required when status is DELIVERED (image/pdf/video).");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -59,6 +67,29 @@ export const UpdateStatusModal: React.FC<Props> = ({
         ? new Date(form.timestamp).toISOString()
         : new Date().toISOString();
 
+      // ✅ If DELIVERED: send multipart with proof
+      if (isDelivered) {
+        const fd = new FormData();
+        fd.append("status", form.status);
+        fd.append("timestamp", isoTimestamp);
+        fd.append("location", form.location?.trim() || "");
+        fd.append("description", form.description?.trim() || "");
+        fd.append("user", form.user?.trim() || "Operator");
+        if (proofFile) fd.append("proof", proofFile);
+
+        const res = await fetch(`/api/shipments/${shipmentId}/events`, {
+          method: "POST",
+          body: fd,
+        });
+
+        if (!res.ok) throw new Error(await res.text());
+
+        onSaved();
+        onClose();
+        return;
+      }
+
+      // ✅ For other statuses: JSON (same as before)
       const payload = {
         status: form.status,
         timestamp: isoTimestamp,
@@ -75,7 +106,6 @@ export const UpdateStatusModal: React.FC<Props> = ({
 
       if (!res.ok) throw new Error(await res.text());
 
-      // Refresh parent + close modal
       onSaved();
       onClose();
     } catch (e: any) {
@@ -83,9 +113,11 @@ export const UpdateStatusModal: React.FC<Props> = ({
     } finally {
       setSaving(false);
     }
-  }, [form, shipmentId, onSaved, onClose, saving]);
+  }, [form, proofFile, shipmentId, onSaved, onClose, saving]);
 
   if (!isOpen) return null;
+
+  const isDelivered = String(form.status).toUpperCase() === "DELIVERED";
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -95,6 +127,7 @@ export const UpdateStatusModal: React.FC<Props> = ({
             <h2 className="text-xl font-bold text-gray-900">Update Status</h2>
             <p className="text-sm text-gray-500 mt-1">
               Adds a timeline event and updates shipment status.
+              {isDelivered ? " Proof is required for DELIVERED." : ""}
             </p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full">
@@ -108,7 +141,12 @@ export const UpdateStatusModal: React.FC<Props> = ({
             <select
               className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
               value={form.status}
-              onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
+              onChange={(e) => {
+                const next = e.target.value;
+                setForm((p) => ({ ...p, status: next }));
+                // ✅ Clear proof if leaving DELIVERED
+                if (String(next).toUpperCase() !== "DELIVERED") setProofFile(null);
+              }}
             >
               {[
                 "BOOKED",
@@ -170,6 +208,30 @@ export const UpdateStatusModal: React.FC<Props> = ({
               placeholder="Short update note..."
             />
           </div>
+
+          {/* ✅ Proof upload only when DELIVERED */}
+          {isDelivered && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Proof (required) <span className="text-xs text-gray-500">(image / pdf / video)</span>
+              </label>
+              <input
+                type="file"
+                accept="application/pdf,image/*,video/*"
+                className="w-full"
+                onChange={(e) => setProofFile(e.target.files?.[0] || null)}
+              />
+              {proofFile ? (
+                <div className="mt-2 text-xs text-gray-600">
+                  Selected: <span className="font-semibold">{proofFile.name}</span>
+                </div>
+              ) : (
+                <div className="mt-2 text-xs text-red-600">
+                  Proof is mandatory for DELIVERED.
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="p-6 border-t border-gray-100 flex justify-end gap-3">

@@ -413,6 +413,10 @@ model ShipmentEvent {
   location    String?
   description String?
   user        String?
+  proofUrl      String?
+  proofName     String?
+  proofMimeType String?
+  proofFileSize Int?
 
   @@index([shipmentId])
   @@index([status])

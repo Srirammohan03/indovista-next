@@ -8,8 +8,6 @@ export type SLAStatus = "ON_TIME" | "AT_RISK" | "BREACHED";
 export type Mode = "SEA" | "AIR" | "ROAD";
 export type Direction = "IMPORT" | "EXPORT";
 
-
-
 export type ShipmentStatus =
   | "BOOKED"
   | "PICKED_UP"
@@ -56,7 +54,7 @@ export type VehicleMini = {
   number: string;
   transportMode: Mode;
   assignedDrivers: DriverMini[];
-};  
+};
 
 export type InvoiceStatus = "DRAFT" | "SENT" | "PAID" | "OVERDUE";
 
@@ -79,11 +77,18 @@ export type ShipmentRow = {
 /** Detail page types (what /api/shipments/:id returns) */
 export type ShipmentEvent = {
   id: string;
-  status: ShipmentStatus;
+  status: ShipmentStatus; // backend returns enum; keep strict
+
   timestamp: string; // ISO string recommended
   location?: string | null;
   description?: string | null;
   user?: string | null;
+
+  // ✅ NEW (Proof fields from backend)
+  proofUrl?: string | null;
+  proofName?: string | null;
+  proofMimeType?: string | null;
+  proofFileSize?: number | null;
 };
 
 export type ShipmentDocument = {
@@ -117,7 +122,6 @@ export type ContainerType = { id: number; code: string; name: string };
 export type TemperaturePreset = {
   id: number;
   name: string;
-  // your UI uses setPoint/unit/range — keep them optional so it works even if API returns only some fields
   setPoint?: number | null;
   unit?: string | null; // "C" | "F" etc
   range?: string | null;
@@ -138,6 +142,17 @@ export type ShipmentFinancials = {
   cost: number;
   margin: number;
   invoiceStatus: InvoiceStatus | string; // keep string-safe until backend is strict
+};
+
+export type Payment = {
+  id: string;
+  amount: number;
+  currency: string;
+  method: "UPI" | "CASH" | "ACCOUNT" | "CHEQUE" | "OTHER";
+  transactionNum?: string | null;
+  date: string; // YYYY-MM-DD
+  notes?: string | null;
+  status: "PENDING" | "COMPLETED" | "FAILED";
 };
 
 export type Shipment = {
@@ -171,6 +186,7 @@ export type Shipment = {
   events: ShipmentEvent[];
 
   financials: ShipmentFinancials;
+
   payments: Payment[]; // Added
   invoices?: Array<{
     id: string;
@@ -183,16 +199,7 @@ export type Shipment = {
   createdAt?: string;
   updatedAt?: string;
 };
-export type Payment = {
-  id: string;
-  amount: number;
-  currency: string;
-  method: "UPI" | "CASH" | "ACCOUNT" | "CHEQUE" | "OTHER";
-  transactionNum?: string | null;
-  date: string; // YYYY-MM-DD
-  notes?: string | null;
-  status: "PENDING" | "COMPLETED" | "FAILED";
-};
+
 interface ShipmentMini {
   id: string;
   reference: string;

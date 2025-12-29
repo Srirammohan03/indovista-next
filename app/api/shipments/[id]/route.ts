@@ -280,6 +280,10 @@ async function shapeShipment(idOrRef: string) {
       location: e.location || "",
       description: e.description || "",
       user: e.user || "",
+       proofUrl: e.proofUrl || "",
+      proofName: e.proofName || "",
+      proofMimeType: e.proofMimeType || "",
+      proofFileSize: e.proofFileSize ?? null,
     })),
 
     // ✅ NEW: invoices + payments (used by Shipment Detail Financials tab)

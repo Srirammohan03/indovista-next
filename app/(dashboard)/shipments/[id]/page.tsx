@@ -202,8 +202,15 @@ export const TimelineTab = ({
             event.description?.trim() || `Status updated to "${safeStatus}". Add notes next time for clarity.`;
           const safeLoc = event.location?.trim() || `${shipment.origin.code} → ${shipment.destination.code}`;
           const safeUser = event.user?.trim() || "System / Operator";
+          const proofUrl = event.proofUrl?.trim() || "";
+          const proofName = event.proofName?.trim() || "Proof";
+          const proofMime = event.proofMimeType?.trim() || "";
 
-          return (
+          const isImage = proofMime.startsWith("image/");
+          const isVideo = proofMime.startsWith("video/");
+          const isPdf = proofMime === "application/pdf" || proofUrl.toLowerCase().endsWith(".pdf");
+
+                  return (
             <div key={event.id} className="relative pl-8">
               <div
                 className={`absolute -left-[9px] top-0 w-4 h-4 rounded-full border-2 border-white ${
@@ -214,11 +221,47 @@ export const TimelineTab = ({
                 <div className="min-w-0">
                   <span className="text-sm font-bold text-gray-900 block">{safeStatus}</span>
                   <span className="text-sm text-gray-600 block break-words">{safeDesc}</span>
+
+                  {/* ✅ Proof preview/link */}
+                  {proofUrl ? (
+                    <div className="mt-3">
+                      <div className="text-xs font-semibold text-gray-700 mb-1">Proof</div>
+
+                      {isImage ? (
+                        <a href={proofUrl} target="_blank" rel="noreferrer">
+                          <img
+                            src={proofUrl}
+                            alt={proofName}
+                            className="max-h-48 rounded-lg border border-gray-200"
+                          />
+                        </a>
+                      ) : isVideo ? (
+                        <video
+                          controls
+                          className="w-full max-w-md rounded-lg border border-gray-200"
+                        >
+                          <source src={proofUrl} type={proofMime || "video/mp4"} />
+                        </video>
+                      ) : (
+                        <a
+                          href={proofUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-sm text-blue-600 hover:underline inline-flex items-center gap-2"
+                        >
+                          <FileText className="w-4 h-4" />
+                          View {isPdf ? "PDF" : "file"} ({proofName})
+                        </a>
+                      )}
+                    </div>
+                  ) : null}
+
                   <div className="mt-2 text-xs text-gray-500">
                     <span className="font-semibold text-gray-700">Vehicle:</span>{" "}
                     {shipment.vehicle ? `${shipment.vehicle.name} (${shipment.vehicle.number})` : "Unassigned"}
                   </div>
                 </div>
+
                 <div className="text-right">
                   <div className="text-xs text-gray-500">{formatIST(event.timestamp)}</div>
                   <div className="text-xs text-gray-400 font-medium">
