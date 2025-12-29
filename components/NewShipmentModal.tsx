@@ -137,13 +137,13 @@ export const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onCl
 
     // Step 2
     originCity: "",
-    originPortId: "",
     originCountry: "",
+    originPortId: "",
     originContact: "",
 
     destCity: "",
-    destPortId: "",
     destCountry: "",
+    destPortId: "",
     destContact: "",
 
     // Step 3
@@ -726,6 +726,15 @@ const payload: any = {
                     />
                   </div>
                   <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Country *</label>
+                    <input
+                      type="text"
+                      className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                      value={formData.originCountry}
+                      onChange={(e) => setFormData({ ...formData, originCountry: e.target.value })}
+                    />
+                  </div>
+                  <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Port</label>
                     <select
                       className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
@@ -740,17 +749,9 @@ const payload: any = {
                       ))}
                     </select>
                   </div>
+                  
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Country *</label>
-                    <input
-                      type="text"
-                      className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                      value={formData.originCountry}
-                      onChange={(e) => setFormData({ ...formData, originCountry: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Contact</label>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Contact Number</label>
                     <input
                       type="tel"
                       className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
@@ -773,6 +774,15 @@ const payload: any = {
                       onChange={(e) => setFormData({ ...formData, destCity: e.target.value })}
                     />
                   </div>
+                   <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Country *</label>
+                    <input
+                      type="text"
+                      className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                      value={formData.destCountry}
+                      onChange={(e) => setFormData({ ...formData, destCountry: e.target.value })}
+                    />
+                  </div>
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Port</label>
                     <select
@@ -788,17 +798,9 @@ const payload: any = {
                       ))}
                     </select>
                   </div>
+                 
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Country *</label>
-                    <input
-                      type="text"
-                      className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                      value={formData.destCountry}
-                      onChange={(e) => setFormData({ ...formData, destCountry: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Contact</label>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Contact Number</label>
                     <input
                       type="tel"
                       className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
