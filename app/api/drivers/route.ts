@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { getActorFromRequest } from "@/lib/getActor";
-import { AuditAction, AuditEntityType } from "@/lib/generated/prisma/browser";
+enum AuditAction {
+  CREATE = "CREATE",
+}
+enum AuditEntityType {
+  DRIVER = "DRIVER",
+}
 
 export const dynamic = "force-dynamic";
 

@@ -4,7 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { generateCustomerCode } from "@/lib/customerCode";
 import { logAudit } from "@/lib/audit";
 import { getActorFromRequest } from "@/lib/getActor";
-import { AuditAction, AuditEntityType } from "@/lib/generated/prisma/browser";
+enum AuditAction {
+  CREATE = "CREATE",
+}
+
+enum AuditEntityType {
+  CUSTOMER = "CUSTOMER",
+}
+
 
 // GET /api/customers → list all customers
 export async function GET(_req: NextRequest) {

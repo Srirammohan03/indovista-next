@@ -3,7 +3,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { getActorFromRequest } from "@/lib/getActor";
-import { AuditAction, AuditEntityType } from "@/lib/generated/prisma/browser";
+enum AuditAction {
+  UPDATE = "UPDATE",
+  DELETE = "DELETE",
+}
+enum AuditEntityType {
+  CUSTOMER = "CUSTOMER",
+}
 
 // In Next 16, params can be a Promise -> we must await it
 type RouteContext = {

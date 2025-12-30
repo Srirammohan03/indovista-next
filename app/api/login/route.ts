@@ -3,7 +3,13 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { createToken } from "@/lib/jwt";
 import { logAudit } from "@/lib/audit";
-import { AuditAction, AuditEntityType } from "@/lib/generated/prisma/browser";
+enum AuditAction {
+  LOGIN = "LOGIN",
+}
+
+enum AuditEntityType {
+  USER = "USER",
+}
 
 export async function POST(req: Request) {
   try {

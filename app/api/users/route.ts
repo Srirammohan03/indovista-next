@@ -3,8 +3,12 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { getActorFromRequest } from "@/lib/getActor";
-import { AuditAction, AuditEntityType } from "@/lib/generated/prisma/browser";
-
+enum AuditAction {
+  CREATE = "CREATE",
+}
+enum AuditEntityType {
+  USER = "USER",
+}
 export const dynamic = "force-dynamic";
 
 type Role = "SUPER_ADMIN" | "ADMIN" | "OPERATOR" | "FINANCE" | "DOCUMENTOR";

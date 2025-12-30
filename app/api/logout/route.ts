@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { getActorFromRequest } from "@/lib/getActor";
 import { logAudit } from "@/lib/audit";
-import { AuditAction, AuditEntityType } from "@/lib/generated/prisma/browser";
+
+enum AuditAction {
+  LOGOUT = "LOGOUT",
+}
+
+enum AuditEntityType {
+  USER = "USER",
+}
 
 function clearCookie(res: NextResponse) {
   res.cookies.set({

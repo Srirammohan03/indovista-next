@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { getActorFromRequest } from "@/lib/getActor";
-import { AuditAction, AuditEntityType } from "@/lib/generated/prisma/client";
+enum AuditAction {
+  UPDATE = "UPDATE",
+  DELETE = "DELETE",  
+}
+enum AuditEntityType {
+  CATEGORY = "CATEGORY",
+}
 
 export const dynamic = "force-dynamic";
 
