@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client"
   output   = "../lib/generated/prisma"
@@ -13,18 +7,504 @@ datasource db {
   provider = "postgresql"
 }
 
-
 model User {
-  id        Int      @id @default(autoincrement())
-  loginId   String   @unique
-  password  String
-  role      Role     @default(OPERATOR)
-  name      String
-  email     String?
-  createdAt DateTime @default(now())
-  auditLogs AuditLog[]
+  id            Int              @id @default(autoincrement())
+  loginId       String           @unique
+  password      String
+  role          Role             @default(OPERATOR)
+  name          String
+  email         String?
+  createdAt     DateTime         @default(now())
+  auditLogs     AuditLog[]
   assignedTasks ComplianceTask[] @relation("AssignedTasks")
   decidedTasks  ComplianceTask[] @relation("DecidedTasks")
+}
+
+model Customer {
+  id             String         @id @default(cuid())
+  customerCode   String         @unique
+  companyName    String
+  type           CustomerType
+  contactPerson  String
+  phone          String?
+  email          String         @unique
+  address        String?
+  city           String?
+  country        String
+  currency       String         @default("INR")
+  creditLimit    Float          @default(0)
+  usedCredits    Float          @default(0)
+  totalAmount    Float          @default(0)
+  paymentTerms   String?
+  kycStatus      Boolean        @default(false)
+  sanctionsCheck Boolean        @default(false)
+  status         CustomerStatus @default(ACTIVE)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  shipments      Shipment[]
+  quotes         Quote[]
+}
+
+model Port {
+  id                   Int        @id @default(autoincrement())
+  code                 String     @unique
+  city                 String
+  country              String
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  destinationShipments Shipment[] @relation("DestinationPort")
+  originShipments      Shipment[] @relation("OriginPort")
+}
+
+model Incoterm {
+  id        Int        @id @default(autoincrement())
+  code      String     @unique
+  name      String
+  type      String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  shipments Shipment[]
+}
+
+model StatusCode {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  description String
+  stage       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Currency {
+  id           Int        @id @default(autoincrement())
+  currencyCode String     @unique
+  name         String
+  exchangeRate Float
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  shipments    Shipment[]
+  products     Product[]
+}
+
+model Temperature {
+  id         Int             @id @default(autoincrement())
+  name       String
+  range      String
+  tolerance  String
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  setPoint   Float?
+  unit       TemperatureUnit @default(C)
+  shipments  Shipment[]
+  categories Category[]
+  products   Product[]
+}
+
+model Category {
+  id            String       @id
+  name          String
+  hsCode        String?
+  storageType   StorageType  @default(AMBIENT)
+  documents     String?
+  notes         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  temperatureId Int?
+  temperature   Temperature? @relation(fields: [temperatureId], references: [id], onDelete: Restrict)
+  products      Product[]
+
+  @@index([name])
+  @@index([temperatureId])
+  @@map("categories")
+}
+
+model Product {
+  id               String         @id
+  name             String
+  type             ProductType
+  hsCode           String?
+  packSize         String?
+  shelfLife        String?
+  unitsPerCarton   Int?
+  cartonsPerPallet Int?
+  notes            String?
+  categoryId       String
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  temperatureId    Int?
+  unitPrice        Float?
+  currencyCode     String         @default("INR")
+  shipmentItems    ShipmentItem[]
+  category         Category       @relation(fields: [categoryId], references: [id])
+  currency         Currency       @relation(fields: [currencyCode], references: [currencyCode])
+  temperature      Temperature?   @relation(fields: [temperatureId], references: [id], onDelete: Restrict)
+
+  @@index([name])
+  @@index([categoryId])
+  @@index([temperatureId])
+  @@map("products")
+}
+
+model ContainerType {
+  id            Int           @id @default(autoincrement())
+  code          String        @unique
+  name          String
+  transportMode TransportMode
+  maxWeight     Float?
+  status        Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  type          String
+  weightUnit    WeightUnit    @default(KG)
+  shipments     Shipment[]
+}
+
+model Shipment {
+  id              String             @id @default(cuid())
+  reference       String             @unique
+  masterDoc       String?
+  customerId      String
+  direction       ShipmentDirection
+  mode            TransportMode
+  commodity       ShipmentCommodity
+  incotermId      Int?
+  originCity      String
+  originCountry   String
+  originContact   String?
+  originPortId    Int?
+  destCity        String
+  destCountry     String
+  destContact     String?
+  destPortId      Int?
+  containerTypeId Int?
+  temperatureId   Int?
+  status          ShipmentStatus     @default(BOOKED)
+  etd             DateTime?
+  eta             DateTime?
+  slaStatus       SLAStatus          @default(ON_TIME)
+  revenue         Float              @default(0)
+  cost            Float              @default(0)
+  margin          Float              @default(0)
+  invoiceStatus   InvoiceStatus      @default(DRAFT)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  currencyId      Int?
+  vehicleId       String?
+  driverId        String?
+  payments        Payment[]
+  containerType   ContainerType?     @relation(fields: [containerTypeId], references: [id], onDelete: Restrict)
+  currency        Currency?          @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+  customer        Customer           @relation(fields: [customerId], references: [id])
+  destPort        Port?              @relation("DestinationPort", fields: [destPortId], references: [id], onDelete: Restrict)
+  driver          Driver?            @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  incoterm        Incoterm?          @relation(fields: [incotermId], references: [id], onDelete: Restrict)
+  originPort      Port?              @relation("OriginPort", fields: [originPortId], references: [id], onDelete: Restrict)
+  temperature     Temperature?       @relation(fields: [temperatureId], references: [id], onDelete: Restrict)
+  vehicle         Vehicle?           @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  documents       ShipmentDocument[]
+  events          ShipmentEvent[]
+  shipmentInvoice ShipmentInvoice[]
+  items           ShipmentItem[]
+  quotes          Quote[]
+
+  @@index([customerId])
+  @@index([reference])
+  @@index([mode])
+  @@index([direction])
+  @@index([vehicleId])
+  @@index([driverId])
+}
+
+model ShipmentItem {
+  id         String   @id @default(cuid())
+  shipmentId String
+  productId  String
+  quantity   Int
+  unit       String
+  weightKg   Float?
+  packaging  String?
+  createdAt  DateTime @default(now())
+  product    Product  @relation(fields: [productId], references: [id])
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@index([productId])
+}
+
+model ShipmentDocument {
+  id         String                 @id @default(cuid())
+  shipmentId String
+  name       String
+  type       ShipmentDocumentType
+  status     ShipmentDocumentStatus @default(DRAFT)
+  expiryDate DateTime?
+  uploadedAt DateTime               @default(now())
+  fileUrl    String?
+  mimeType   String?
+  fileSize   Int?
+  shipment   Shipment               @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@index([type])
+  @@index([status])
+}
+
+model ShipmentEvent {
+  id            String         @id @default(cuid())
+  shipmentId    String
+  status        ShipmentStatus
+  timestamp     DateTime       @default(now())
+  location      String?
+  description   String?
+  user          String?
+  proofFileSize Int?
+  proofMimeType String?
+  proofName     String?
+  proofUrl      String?
+  shipment      Shipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@index([status])
+}
+
+model FreightMode {
+  id        TransportMode @id
+  label     String
+  enabled   Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@map("freight_modes")
+}
+
+model Vehicle {
+  id              String           @id
+  name            String
+  number          String           @unique
+  ownership       VehicleOwnership @default(OWN)
+  engineType      String?
+  fuel            FuelType         @default(DIESEL)
+  fuelOther       String?
+  fuelCapacity    Float?
+  loadingCapacity Float?
+  rcNumber        String?
+  rcExpiry        DateTime?
+  pollutionExpiry DateTime?
+  isRegistered    Boolean          @default(true)
+  registeredAt    DateTime?
+  docs            String?
+  transportMode   TransportMode
+  managingVehicle String?
+  medicalSupport  String?
+  notes           String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  shipments       Shipment[]
+  drivers         VehicleDriver[]
+
+  @@index([name])
+  @@index([transportMode])
+  @@map("vehicles")
+}
+
+model Driver {
+  id               String          @id
+  name             String
+  age              Int?
+  role             DriverRole      @default(DRIVER)
+  profession       String?
+  education        String?
+  languages        String?
+  licenseNumber    String?
+  contactNumber    String?
+  email            String?
+  address          String?
+  transportMode    TransportMode
+  medicalCondition String?
+  notes            String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  shipments        Shipment[]
+  vehicles         VehicleDriver[]
+
+  @@index([name])
+  @@index([transportMode])
+  @@map("drivers")
+}
+
+model VehicleDriver {
+  vehicleId  String
+  driverId   String
+  assignedAt DateTime @default(now())
+  driver     Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  vehicle    Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@id([vehicleId, driverId])
+  @@index([driverId])
+  @@map("vehicle_drivers")
+}
+
+model Quote {
+  id                   String             @id
+  shipmentId           String?
+  customerId           String
+  quoteDate            DateTime           @default(now())
+  validityDays         Int?               @default(7)
+  validTill            DateTime?
+  status               QuoteStatus        @default(DRAFT)
+  preparedBy           String?
+  customerName         String
+  contactPerson        String?
+  email                String?
+  phone                String?
+  address              String?
+  country              String?
+  originCity           String
+  originCountry        String
+  originPortCode       String?
+  destCity             String
+  destCountry          String
+  destPortCode         String?
+  mode                 TransportMode
+  direction            ShipmentDirection?
+  commodity            ShipmentCommodity
+  incotermCode         String?
+  containerTypeCode    String?
+  containersCount      Int?
+  temperatureRange     String?
+  specialHandlingNotes String?
+  totalWeightKg        Float?             @default(0)
+  totalVolumeCbm       Float?             @default(0)
+  packagesCount        Int?               @default(0)
+  packagingType        String?
+  currencyCode         String             @default("INR")
+  taxesIncluded        Boolean            @default(false)
+  taxAmount            Float              @default(0)
+  subtotal             Float              @default(0)
+  total                Float              @default(0)
+  notesIncluded        String?
+  notesExcluded        String?
+  disclaimer           String?
+  acceptedBy           String?
+  acceptedAt           DateTime?
+  companyStamp         String?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  taxPercent           Float              @default(0)
+  charges              QuoteCharge[]
+  customer             Customer           @relation(fields: [customerId], references: [id])
+  shipment             Shipment?          @relation(fields: [shipmentId], references: [id])
+
+  @@index([shipmentId])
+  @@index([customerId])
+  @@index([status])
+  @@map("quotes")
+}
+
+model QuoteCharge {
+  id           String     @id @default(cuid())
+  quoteId      String
+  name         String
+  chargeType   ChargeType @default(FLAT)
+  currencyCode String     @default("INR")
+  quantity     Float?     @default(1)
+  unitLabel    String?
+  amount       Float      @default(0)
+  createdAt    DateTime   @default(now())
+  quote        Quote      @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId])
+  @@map("quote_charges")
+}
+
+model ShipmentInvoice {
+  shipmentId    String
+  invoiceNumber String    @unique
+  customerName  String
+  customerGstin String?
+  placeOfSupply String?
+  issueDate     DateTime
+  dueDate       DateTime
+  currency      String
+  status        String    @default("DRAFT")
+  tdsRate       Float     @default(0)
+  items         Json
+  subtotal      Float
+  totalTax      Float
+  tdsAmount     Float
+  amount        Float
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  id            String    @id @default(cuid())
+  payments      Payment[]
+  shipment      Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+}
+
+model Payment {
+  id             String           @id @default(cuid())
+  shipmentId     String
+  invoiceId      String?
+  amount         Float
+  currency       String
+  method         PaymentMethod
+  transactionNum String?
+  date           DateTime         @default(now())
+  notes          String?
+  status         PaymentStatus    @default(PENDING)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  invoice        ShipmentInvoice? @relation(fields: [invoiceId], references: [id])
+  shipment       Shipment         @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@index([invoiceId])
+}
+
+model AuditLog {
+  id          String          @id @default(cuid())
+  timestamp   DateTime        @default(now())
+  actorUserId Int?
+  actorName   String?
+  actorRole   Role?
+  action      AuditAction
+  entityType  AuditEntityType
+  entityId    String?
+  entityRef   String?
+  description String
+  meta        Json?
+  actorUser   User?           @relation(fields: [actorUserId], references: [id])
+
+  @@index([timestamp])
+  @@index([entityType])
+  @@index([entityId])
+  @@index([actorUserId])
+}
+
+model ComplianceTask {
+  id               String                 @id @default(cuid())
+  type             ComplianceTaskType
+  priority         ComplianceTaskPriority @default(MEDIUM)
+  status           ComplianceTaskStatus   @default(PENDING)
+  entityType       AuditEntityType
+  entityId         String
+  entityName       String
+  entityRef        String?
+  description      String
+  dueDate          DateTime?
+  assignedToUserId Int?
+  decidedByUserId  Int?
+  decidedAt        DateTime?
+  decisionNote     String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  assignedToUser   User?                  @relation("AssignedTasks", fields: [assignedToUserId], references: [id])
+  decidedByUser    User?                  @relation("DecidedTasks", fields: [decidedByUserId], references: [id])
+
+  @@index([status])
+  @@index([type])
+  @@index([entityType, entityId])
 }
 
 enum Role {
@@ -33,32 +513,6 @@ enum Role {
   OPERATOR
   FINANCE
   DOCUMENTOR
-}
-
-model Customer {
-  id              String         @id @default(cuid())        // Internal primary key
-  customerCode    String         @unique                     // Example: "CUST-001"
-  companyName     String
-  type            CustomerType  
-  contactPerson   String
-  phone           String?
-  email           String         @unique  
-  address         String?
-  city            String?
-  country         String  
-  currency        String         @default("INR")  
-  creditLimit     Float          @default(0)
-  usedCredits     Float          @default(0)
-  totalAmount     Float          @default(0)  
-  paymentTerms    String?        // Example: "Net 30"  
-  kycStatus       Boolean        @default(false)
-  sanctionsCheck  Boolean        @default(false)
-  status          CustomerStatus @default(ACTIVE)           // <-- Added enum field
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-
-  shipments  Shipment[]
-  quotes     Quote[]
 }
 
 enum CustomerType {
@@ -74,127 +528,17 @@ enum CustomerStatus {
   SUSPENDED
 }
 
-model Port {
-  id        Int      @id @default(autoincrement())
-  code      String   @unique
-  city      String
-  country   String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  originShipments      Shipment[] @relation("OriginPort")
-  destinationShipments Shipment[] @relation("DestinationPort")
-}
-
-model Incoterm {
-  id        Int      @id @default(autoincrement())
-  code      String   @unique
-  name      String
-  type      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  shipments Shipment[]
-}
-
-model StatusCode {
-  id          Int      @id @default(autoincrement())
-  code        String   @unique
-  description String
-  stage       String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
-model Currency {
-  id            Int      @id @default(autoincrement())
-  currencyCode  String   @unique
-  name          String
-  exchangeRate  Float    // EXCHANGE RATE TO INR
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
-  shipments Shipment[]
-  products  Product[]
-}
-
-model Temperature {
-  id         Int      @id @default(autoincrement())
-  name       String
-  range      String
-  tolerance  String
-  setPoint   Float?          // ✅ added
-  unit       TemperatureUnit @default(C) // ✅ added
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  shipments  Shipment[]
-  categories Category[]
-  products   Product[]
-}
-
 enum StorageType {
   AMBIENT
   CHILLED
   FROZEN
 }
 
-model Category {
-  id          String      @id                 // e.g. "CAT-001"
-  name        String
-  hsCode      String?
-  storageType StorageType @default(AMBIENT)
-  documents   String?
-  notes       String?
-  temperatureId Int?
-  temperature   Temperature? @relation(fields: [temperatureId], references: [id], onDelete: Restrict)
-
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-
-   products    Product[]
-
-  @@index([name])
-  @@index([temperatureId])
-  @@map("categories")
-  
-}
 enum ProductType {
   FROZEN
   SPICE
 }
 
-model Product {
-  id             String      @id                 // e.g. "PROD-001"
-  name           String
-  type           ProductType
-
-  hsCode         String?
-  packSize       String?
-  shelfLife      String?
-  unitsPerCarton Int?
-  cartonsPerPallet Int?
-  notes          String?
-  unitPrice        Float?
-  currencyCode     String      @default("INR")     // ex: INR, USD, AED
-  currency         Currency    @relation(fields: [currencyCode], references: [currencyCode], onDelete: Restrict)
- 
-  temperatureId Int?
-  temperature   Temperature? @relation(fields: [temperatureId], references: [id], onDelete: Restrict)
-
-  categoryId     String
-  category       Category    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  shipmentItems    ShipmentItem[]
-
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
-
-  @@index([name])
-  @@index([categoryId])
-  @@index([temperatureId])
-  @@map("products")
-
-}
 enum TransportMode {
   AIR
   SEA
@@ -202,30 +546,12 @@ enum TransportMode {
 }
 
 enum WeightUnit {
-  MANN        // Mann / Maund
-  KG          // Kilogram
-  QUINTAL     // Quintal (q)
-  TON         // Metric Ton (t)
-  LB          // Pounds
+  MANN
+  KG
+  QUINTAL
+  TON
+  LB
 }
-
-model ContainerType {
-  id            Int           @id @default(autoincrement())
-  code          String        @unique
-  name          String
-  transportMode TransportMode
-  type          String
-
-  maxWeight     Float?
-  weightUnit    WeightUnit    @default(KG)
-
-  status        Boolean       @default(true)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-
-  shipments Shipment[]
-}
-
 
 enum ShipmentDirection {
   IMPORT
@@ -291,139 +617,6 @@ enum ShipmentDocumentStatus {
   PENDING
   NOT_RECEIVED
 }
-model Shipment {
-  id            String            @id @default(cuid())
-
-  reference     String            @unique
-  masterDoc     String?
-
-  customerId    String
-  customer      Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
-
-  direction     ShipmentDirection
-  mode          TransportMode
-  commodity     ShipmentCommodity
-
-  incotermId    Int?
-  incoterm      Incoterm?         @relation(fields: [incotermId], references: [id], onDelete: Restrict)
-
-  // Origin
-  originCity      String
-  originCountry   String
-  originContact   String?
-  originPortId    Int?
-  originPort      Port?           @relation("OriginPort", fields: [originPortId], references: [id], onDelete: Restrict)
-
-  // Destination
-  destCity        String
-  destCountry     String
-  destContact     String?
-  destPortId      Int?
-  destPort        Port?           @relation("DestinationPort", fields: [destPortId], references: [id], onDelete: Restrict)
-
-  // Step 3
-  containerTypeId Int?
-  containerType   ContainerType?  @relation(fields: [containerTypeId], references: [id], onDelete: Restrict)
-
-  temperatureId   Int?
-  temperature     Temperature?    @relation(fields: [temperatureId], references: [id], onDelete: Restrict)
-
-  // Step 4
-  status        ShipmentStatus     @default(BOOKED)
-  etd           DateTime?
-  eta           DateTime?
-
-  slaStatus     SLAStatus          @default(ON_TIME)
-
-  currencyId   Int?
-  currency      Currency?          @relation(fields: [currencyId], references: [id], onDelete: Restrict)
-  revenue       Float              @default(0)
-  cost          Float              @default(0)
-  margin        Float              @default(0)
-  invoiceStatus InvoiceStatus      @default(DRAFT)
-  vehicleId  String?
-  vehicle    Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
-  driverId      String?
-  driver        Driver?            @relation(fields: [driverId], references: [id], onDelete: Restrict)
-
-  items         ShipmentItem[]
-  documents     ShipmentDocument[]
-  events        ShipmentEvent[]
-  quotes        Quote[]
-  shipmentInvoice ShipmentInvoice[]
-  payments      Payment[]
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-
-  @@index([customerId])
-  @@index([reference])
-  @@index([mode])
-  @@index([direction])
-  @@index([vehicleId])
-  @@index([driverId])
-}
-
-model ShipmentItem {
-  id         String   @id @default(cuid())
-
-  shipmentId String
-  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-
-  productId  String
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
-
-  quantity   Int
-  unit       String
-  weightKg   Float?
-  packaging  String?
-
-  createdAt  DateTime @default(now())
-
-  @@index([shipmentId])
-  @@index([productId])
-}
-
-model ShipmentDocument {
-  id         String                @id @default(cuid())
-
-  shipmentId String
-  shipment   Shipment              @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-
-  name       String
-  type       ShipmentDocumentType
-  status     ShipmentDocumentStatus @default(DRAFT)
-
-  expiryDate DateTime?
-  uploadedAt DateTime              @default(now())
-
-  fileUrl    String?
-  mimeType   String?
-  fileSize   Int?
-
-  @@index([shipmentId])
-  @@index([type])
-  @@index([status])
-}
-
-model ShipmentEvent {
-  id          String         @id @default(cuid())
-
-  shipmentId  String
-  shipment    Shipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-
-  status      ShipmentStatus
-  timestamp   DateTime       @default(now())
-  location    String?
-  description String?
-  user        String?
-  proofUrl      String?
-  proofName     String?
-  proofMimeType String?
-  proofFileSize Int?
-
-  @@index([shipmentId])
-  @@index([status])
-}
 
 enum VehicleOwnership {
   OWN
@@ -444,97 +637,6 @@ enum DriverRole {
   OPERATOR
 }
 
-model FreightMode {
-  // Uses same enum values ROAD/SEA/AIR
-  id        TransportMode @id
-  label     String
-  enabled   Boolean       @default(true)
-
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-
-  @@map("freight_modes")
-}
-
-model Vehicle {
-  id              String           @id // e.g. "VEH-001"
-  name            String
-  number          String           @unique
-  ownership       VehicleOwnership @default(OWN)
-
-  engineType      String?
-  fuel            FuelType         @default(DIESEL)
-  fuelOther       String?
-  fuelCapacity    Float?
-  loadingCapacity Float?
-
-  rcNumber        String?
-  rcExpiry        DateTime?
-  pollutionExpiry DateTime?
-
-  isRegistered    Boolean          @default(true)
-  registeredAt    DateTime?
-
-  docs            String?
-  transportMode   TransportMode
-
-  managingVehicle String?          // manager name / team / vendor
-  medicalSupport  String?          // e.g. "First Aid Kit", "Doctor on call", etc.
-  notes           String?
-
-  drivers         VehicleDriver[]
-  shipments       Shipment[]
-
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-
-  @@index([name])
-  @@index([transportMode])
-  @@map("vehicles")
-}
-
-model Driver {
-  id               String      @id // e.g. "DRV-001"
-  name             String
-  age              Int?
-  role             DriverRole  @default(DRIVER)
-
-  profession       String?
-  education        String?
-  languages        String?     // comma separated: "English, Telugu"
-  licenseNumber    String?
-  contactNumber    String?
-  email            String?
-  address          String?
-
-  transportMode    TransportMode
-  medicalCondition String?
-  notes            String?
-
-  vehicles         VehicleDriver[]
-  shipments        Shipment[]
-
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
-
-  @@index([name])
-  @@index([transportMode])
-  @@map("drivers")
-}
-
-model VehicleDriver {
-  vehicleId  String
-  driverId   String
-  assignedAt DateTime @default(now())
-
-  vehicle    Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-  driver     Driver  @relation(fields: [driverId], references: [id], onDelete: Cascade)
-
-  @@id([vehicleId, driverId])
-  @@index([driverId])
-  @@map("vehicle_drivers")
-}
-
 enum QuoteStatus {
   DRAFT
   SENT
@@ -546,151 +648,6 @@ enum QuoteStatus {
 enum ChargeType {
   FLAT
   PER_UNIT
-}
-
-model Quote {
-  // ✅ Quote number format: QT-2025-001 (THIS IS THE PRIMARY KEY)
-  id String @id
-
-  shipmentId String?
-  shipment   Shipment? @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
-
-  customerId String
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
-
-  quoteDate    DateTime @default(now())
-  validityDays Int?     @default(7)
-  validTill    DateTime?
-  status       QuoteStatus @default(DRAFT)
-  preparedBy   String?
-
-  // ---------------------------
-  // SNAPSHOT (from Shipment/Customer)
-  // ---------------------------
-  customerName  String
-  contactPerson String?
-  email         String?
-  phone         String?
-  address       String?
-  country       String?
-
-  originCity     String
-  originCountry  String
-  originPortCode String?
-
-  destCity       String
-  destCountry    String
-  destPortCode   String?
-
-  mode      TransportMode
-  direction ShipmentDirection?
-  commodity ShipmentCommodity
-  incotermCode String?
-
-  containerTypeCode String?
-  containersCount   Int?
-
-  temperatureRange String?
-  specialHandlingNotes String?
-
-  totalWeightKg  Float? @default(0)
-  totalVolumeCbm Float? @default(0)
-  packagesCount  Int?   @default(0)
-  packagingType  String?
-
-  // ---------------------------
-  // FINANCIALS
-  // ---------------------------
-  currencyCode   String  @default("INR")
-  taxesIncluded  Boolean @default(false)
-  taxAmount      Float   @default(0)
-  taxPercent    Float    @default(0)
-  subtotal       Float   @default(0)
-  total          Float   @default(0)
-
-  notesIncluded String?
-  notesExcluded String?
-  disclaimer    String?
-
-  acceptedBy   String?
-  acceptedAt   DateTime?
-  companyStamp String?
-
-  charges   QuoteCharge[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([shipmentId])
-  @@index([customerId])
-  @@index([status])
-  @@map("quotes")
-}
-
-model QuoteCharge {
-  id String @id @default(cuid())
-
-  quoteId String
-  quote   Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-
-  name       String
-  chargeType ChargeType @default(FLAT)
-  currencyCode String @default("INR")
-
-  // If PER_UNIT, store quantity + unitLabel; total is quantity * amount
-  quantity  Float?  @default(1)
-  unitLabel String?
-  amount    Float   @default(0)
-
-  createdAt DateTime @default(now())
-
-  @@index([quoteId])
-  @@map("quote_charges")
-}
-
-model ShipmentInvoice {
-  id            String     @id @default(cuid()) // ✅ TEMP: optional
-  shipmentId    String
-  invoiceNumber String     @unique
-  customerName  String
-  customerGstin String?
-  placeOfSupply String?
-  issueDate     DateTime
-  dueDate       DateTime
-  currency      String
-  tdsRate       Float      @default(0)
-  status        String     @default("DRAFT")
-  items         Json
-  subtotal      Float
-  totalTax      Float
-  tdsAmount     Float
-  amount        Float
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-  shipment      Shipment   @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-  payments      Payment[]
-
-  @@index([shipmentId])
-}
-
-model Payment {
-  id             String        @id @default(cuid())
-  shipmentId     String
-  shipment       Shipment      @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-  invoiceId      String?
-  invoice        ShipmentInvoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
-  amount         Float
-  currency       String
-  method         PaymentMethod
-  transactionNum String?
-  date           DateTime      @default(now())
-  notes          String?
-  status         PaymentStatus @default(PENDING)
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-
-  @@index([shipmentId])
-  @@index([invoiceId])
 }
 
 enum PaymentMethod {
@@ -731,31 +688,6 @@ enum AuditAction {
   LOGOUT
 }
 
-model AuditLog {
-  id          String          @id @default(cuid())
-  timestamp   DateTime        @default(now())
-
-  // Who did it (optional because sometimes it's system jobs)
-  actorUserId Int?
-  actorUser   User?           @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
-  actorName   String?
-  actorRole   Role?
-
-  action      AuditAction
-  entityType  AuditEntityType
-  entityId    String?
-  entityRef   String?         // example: "SHP-2025-009", "CUST-001", "INV-0001"
-  description String
-
-  // store before/after or request payload snapshots
-  meta        Json?
-
-  @@index([timestamp])
-  @@index([entityType])
-  @@index([entityId])
-  @@index([actorUserId])
-}
-
 enum ComplianceTaskType {
   KYC_REVIEW
   SANCTIONS_CHECK
@@ -772,35 +704,4 @@ enum ComplianceTaskStatus {
   PENDING
   APPROVED
   REJECTED
-}
-
-model ComplianceTask {
-  id          String               @id @default(cuid())
-  type        ComplianceTaskType
-  priority    ComplianceTaskPriority @default(MEDIUM)
-  status      ComplianceTaskStatus @default(PENDING)
-
-  // link to a real entity (customer/shipment/document)
-  entityType  AuditEntityType
-  entityId    String
-  entityName  String
-  entityRef   String?
-
-  description String
-  dueDate     DateTime?
-
-  assignedToUserId Int?
-  assignedToUser   User? @relation("AssignedTasks",fields: [assignedToUserId],references: [id],onDelete: SetNull )
-
-  decidedByUserId Int?
-  decidedByUser   User? @relation("DecidedTasks",fields: [decidedByUserId], references: [id], onDelete: SetNull  )
-  decidedAt     DateTime?
-  decisionNote  String?
-
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-
-  @@index([status])
-  @@index([type])
-  @@index([entityType, entityId])
 }

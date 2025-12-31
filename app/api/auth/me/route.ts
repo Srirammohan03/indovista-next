@@ -1,10 +1,11 @@
+//app\api\auth\me\route.ts
 import { NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 import { prisma } from "@/lib/prisma";
-import { cookies } from "next/headers";
+import { NextRequest } from "next/server";
 
-export async function GET() {
-  const token = (await cookies()).get("token")?.value;
+export async function GET(req: NextRequest) {
+  const token = req.cookies.get("token")?.value;
 
   if (!token) return NextResponse.json({ user: null }, { status: 401 });
 

@@ -1,3 +1,5 @@
+
+//app\api\logout\route.ts
 import { NextResponse } from "next/server";
 import { getActorFromRequest } from "@/lib/getActor";
 import { logAudit } from "@/lib/audit";
@@ -60,3 +62,4 @@ export async function POST(req: Request) {
 
   return clearCookie(NextResponse.json({ message: "Logout successful" }));
 }
+

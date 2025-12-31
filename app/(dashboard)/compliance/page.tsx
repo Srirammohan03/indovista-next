@@ -207,7 +207,7 @@ const CompliancePage = () => {
 
         <div className="space-y-4">
           {recentLogs.map((log) => (
-            <div key={log.id} className="flex items-start gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+            <div key={log.id} className="flex items-start gap-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
               <div className="mt-1 p-2 bg-gray-100 rounded-full">{getLogIcon(log.entityType)}</div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
