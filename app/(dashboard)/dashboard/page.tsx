@@ -41,17 +41,17 @@ const SLA_COLORS: Record<string, string> = {
   "Breached": "#f43f5e",
 };
 
-const DEMO_SHIPMENTS: Shipment[] = [
-  { ref: "IMP-MX-001", customer: "Developer Team", mode: "SEA", status: "DELIVERED", slaStatus: "ON_TIME", amount: 50, docsCount: 1, createdAt: "2025-12-04" },
-  { ref: "EXP-OT-001", customer: "Outright creators", mode: "ROAD", status: "BOOKED", slaStatus: "ON_TIME", amount: 2376, docsCount: 1, createdAt: "2025-12-06" },
-  { ref: "EXP-FZ-004", customer: "Outright creators", mode: "AIR", status: "PICKED_UP", slaStatus: "ON_TIME", amount: 354000, docsCount: 1, createdAt: "2025-12-08" },
-  { ref: "EXP-FZ-002", customer: "FouziNex", mode: "SEA", status: "BOOKED", slaStatus: "ON_TIME", amount: 0, docsCount: 0, createdAt: "2025-12-10" },
-  { ref: "EXP-FZ-003", customer: "Outright creators", mode: "SEA", status: "BOOKED", slaStatus: "ON_TIME", amount: 0, docsCount: 0, createdAt: "2025-12-12" },
-  { ref: "IMP-SP-002", customer: "FouziNex", mode: "ROAD", status: "BOOKED", slaStatus: "AT_RISK", amount: 400000, docsCount: 1, createdAt: "2025-12-14" },
-  { ref: "IMP-FZ-001", customer: "FouziNex", mode: "AIR", status: "BOOKED", slaStatus: "ON_TIME", amount: 999999, docsCount: 1, createdAt: "2025-12-18" },
-  { ref: "IMP-SP-001", customer: "Outright creators", mode: "ROAD", status: "PICKED_UP", slaStatus: "ON_TIME", amount: 150, docsCount: 1, createdAt: "2025-12-20" },
-  { ref: "EXP-IN-008", customer: "FouziNex", mode: "SEA", status: "IN_TRANSIT", slaStatus: "ON_TIME", amount: 0, docsCount: 1, createdAt: "2025-12-28" },
-];
+// const DEMO_SHIPMENTS: Shipment[] = [
+//   { ref: "IMP-MX-001", customer: "Developer Team", mode: "SEA", status: "DELIVERED", slaStatus: "ON_TIME", amount: 50, docsCount: 1, createdAt: "2025-12-04" },
+//   { ref: "EXP-OT-001", customer: "Outright creators", mode: "ROAD", status: "BOOKED", slaStatus: "ON_TIME", amount: 2376, docsCount: 1, createdAt: "2025-12-06" },
+//   { ref: "EXP-FZ-004", customer: "Outright creators", mode: "AIR", status: "PICKED_UP", slaStatus: "ON_TIME", amount: 354000, docsCount: 1, createdAt: "2025-12-08" },
+//   { ref: "EXP-FZ-002", customer: "FouziNex", mode: "SEA", status: "BOOKED", slaStatus: "ON_TIME", amount: 0, docsCount: 0, createdAt: "2025-12-10" },
+//   { ref: "EXP-FZ-003", customer: "Outright creators", mode: "SEA", status: "BOOKED", slaStatus: "ON_TIME", amount: 0, docsCount: 0, createdAt: "2025-12-12" },
+//   { ref: "IMP-SP-002", customer: "FouziNex", mode: "ROAD", status: "BOOKED", slaStatus: "AT_RISK", amount: 400000, docsCount: 1, createdAt: "2025-12-14" },
+//   { ref: "IMP-FZ-001", customer: "FouziNex", mode: "AIR", status: "BOOKED", slaStatus: "ON_TIME", amount: 999999, docsCount: 1, createdAt: "2025-12-18" },
+//   { ref: "IMP-SP-001", customer: "Outright creators", mode: "ROAD", status: "PICKED_UP", slaStatus: "ON_TIME", amount: 150, docsCount: 1, createdAt: "2025-12-20" },
+//   { ref: "EXP-IN-008", customer: "FouziNex", mode: "SEA", status: "IN_TRANSIT", slaStatus: "ON_TIME", amount: 0, docsCount: 1, createdAt: "2025-12-28" },
+// ];
 
 // -----------------------------
 // Helpers
@@ -388,7 +388,44 @@ export default function OperationsDashboardClean() {
   const [mode, setMode] = React.useState<"ALL" | Mode>("ALL");
   const [query, setQuery] = React.useState<string>("");
 
-  const shipmentsAll = React.useMemo<Shipment[]>(() => DEMO_SHIPMENTS, []);
+  //const shipmentsAll = React.useMemo<Shipment[]>(() => DEMO_SHIPMENTS, []);
+  const [shipmentsAll, setShipmentsAll] = React.useState<Shipment[]>([]);
+const [loading, setLoading] = React.useState(true);
+
+React.useEffect(() => {
+  async function loadShipments() {
+    try {
+      const res = await fetch("/api/shipments", {
+        cache: "no-store",
+      });
+
+      if (!res.ok) throw new Error("Failed to fetch shipments");
+
+      const data = await res.json();
+
+      // 🔁 map backend → existing UI shape (UI remains untouched)
+      const mapped: Shipment[] = data.map((s: any) => ({
+        ref: s.reference,
+        customer: s.customerName,
+        mode: s.mode,
+        status: s.status,
+        slaStatus: s.slaStatus,
+        amount: Number(s.amount || 0),
+        docsCount: s.documentsCount ?? (s.documents?.length ?? 0) ?? 0,
+        createdAt: s.createdAt?.slice(0, 10),
+      }));
+
+      setShipmentsAll(mapped);
+    } catch (e) {
+      console.error("Dashboard fetch error", e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  loadShipments();
+}, []);
+
 
   const shipments = React.useMemo<Shipment[]>(() => {
     const from = startOfDay(range.from);
@@ -493,6 +530,13 @@ export default function OperationsDashboardClean() {
   const shipmentsCount = shipments.length;
 
   const headerRangeText = formatRangeLabel(range.from, range.to);
+if (loading) {
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <span className="text-sm text-slate-500">Loading dashboard…</span>
+    </div>
+  );
+}
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
