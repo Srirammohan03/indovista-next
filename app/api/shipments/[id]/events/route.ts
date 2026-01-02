@@ -13,7 +13,7 @@ enum AuditAction {
   CREATE = "CREATE",
 }
 enum AuditEntityType {
-  SHIPMENT_EVENT = "SHIPMENT_EVENT",
+  SHIPMENT = "SHIPMENT",
 }
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -256,7 +256,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       actorName: actor.name,
       actorRole: actor.role,
       action: AuditAction.CREATE as any,
-      entityType: AuditEntityType.SHIPMENT_EVENT as any,
+      entityType: AuditEntityType.SHIPMENT as any,
       entityId: result.event.id,
       entityRef: shipment.reference || shipment.id,
       description: `Shipment event created: ${status} (${shipment.reference || shipment.id})`,

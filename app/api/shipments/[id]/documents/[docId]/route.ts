@@ -13,7 +13,7 @@ enum AuditAction {
   DELETE = "DELETE",
 }
 enum AuditEntityType {
-  SHIPMENT_DOCUMENT = "SHIPMENT_DOCUMENT",
+  DOCUMENT = "DOCUMENT",
 }
 
 type Ctx = {
@@ -70,7 +70,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       actorName: actor.name,
       actorRole: actor.role,
       action: AuditAction.UPDATE as any,
-      entityType: AuditEntityType.SHIPMENT_DOCUMENT as any,
+      entityType: AuditEntityType.DOCUMENT as any,
       entityId: docId,
       entityRef: shipmentId,
       description: `Shipment document metadata updated: ${docId}`,
@@ -122,7 +122,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       actorName: actor.name,
       actorRole: actor.role,
       action: AuditAction.DELETE as any,
-      entityType: AuditEntityType.SHIPMENT_DOCUMENT as any,
+      entityType: AuditEntityType.DOCUMENT as any,
       entityId: docId,
       entityRef: shipmentId,
       description: `Shipment document deleted: ${docId}`,
