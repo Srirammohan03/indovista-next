@@ -18,7 +18,6 @@ import {
   ShieldCheck,
   Settings,
 } from "lucide-react";
-import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
 
 import {
@@ -53,24 +52,21 @@ export default function AppSidebar() {
   const pathname = usePathname();
 
   return (
-    <Sidebar
-      collapsible="icon"
-      className="border-r border-gray-800"
-      // Custom styling for dark theme
-      style={
-        {
-          "--sidebar-background": "#0f172a",
-          "--sidebar-foreground": "#ffffff",
-          "--sidebar-primary": "#3b82f6",
-          "--sidebar-primary-foreground": "#ffffff",
-          "--sidebar-border": "#1e293b",
-        } as React.CSSProperties
-      }
-    >
+    <Sidebar collapsible="icon" className="border-r border-gray-800">
       {/* Header */}
       <SidebarHeader className="h-16 border-b border-gray-800 bg-[#0f172a]">
-        <div className="flex items-center gap-3 px-4 h-full">
-          <div className="flex items-center justify-center w-10 h-10 flex-shrink-0">
+        <div
+          className={cn(
+            "flex items-center gap-3 px-4 h-full",
+            "group-data-[state=collapsed]:px-2 group-data-[state=collapsed]:gap-0"
+          )}
+        >
+          <div
+            className={cn(
+              "flex items-center justify-center w-10 h-10 flex-shrink-0",
+              "group-data-[state=collapsed]:-ml-1"
+            )}
+          >
             <Image
               src="/logo.png"
               alt="Indovista Logo"
@@ -80,18 +76,23 @@ export default function AppSidebar() {
               priority
             />
           </div>
-          <span className="font-bold text-lg tracking-tight text-white whitespace-nowrap">
+
+          <span className="font-bold text-lg tracking-tight text-white whitespace-nowrap group-data-[state=collapsed]:hidden">
             INDOVISTA
           </span>
         </div>
       </SidebarHeader>
 
       {/* Main Menu Content */}
-      <SidebarContent className="bg-[#0f172a]">
+      <SidebarContent
+        className="bg-[#0f172a] "
+        style={{ "--sidebar-icon-size": "1.2rem" } as React.CSSProperties}
+      >
         <SidebarGroup>
-          <SidebarGroupLabel className="text-gray-400 text-xs font-medium uppercase tracking-wider px-4 pt-4">
+          <SidebarGroupLabel className="text-gray-400 text-md font-medium uppercase tracking-wider px-4 pt-4 pb-4">
             Operations
           </SidebarGroupLabel>
+
           <SidebarGroupContent>
             <SidebarMenu>
               {operationsItems.map((item) => (
@@ -103,14 +104,13 @@ export default function AppSidebar() {
                     className={cn(
                       "w-full justify-start text-gray-300 hover:bg-[#1e293b] hover:text-white transition-colors",
                       "data-[active=true]:bg-blue-600 data-[active=true]:text-white",
-                      "data-[active=true]:rounded-l-md data-[active=true]:rounded-r-none",
                       "data-[state=collapsed]:justify-center data-[state=collapsed]:px-3",
                       "py-2.5"
                     )}
                   >
                     <Link href={item.href} className="flex items-center gap-3">
-                      <item.icon className="h-5 w-5 flex-shrink-0" />
-                      <span className="text-sm font-medium">{item.label}</span>
+                      <item.icon className="shrink-0" />
+                      <span className="text-sm font-normal">{item.label}</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -120,9 +120,10 @@ export default function AppSidebar() {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel className="text-gray-400 text-xs font-medium uppercase tracking-wider px-4 pt-4">
+          <SidebarGroupLabel className="text-gray-400 text-md font-medium uppercase tracking-wider px-4 pt-4 pb-4">
             System
           </SidebarGroupLabel>
+
           <SidebarGroupContent>
             <SidebarMenu>
               {systemItems.map((item) => (
@@ -138,8 +139,8 @@ export default function AppSidebar() {
                     )}
                   >
                     <Link href={item.href} className="flex items-center gap-3">
-                      <item.icon className="h-5 w-5 flex-shrink-0" />
-                      <span className="text-sm font-medium">{item.label}</span>
+                      <item.icon className="shrink-0" />
+                      <span className="text-sm font-normal">{item.label}</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -148,16 +149,18 @@ export default function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      {/* Footer - Now matches sidebar dark theme */}
+
+      {/* Footer */}
       <SidebarFooter className="border-t border-gray-800 bg-[#0f172a] mt-auto">
-        <div className="px-6 py-5">
+        <div className={cn("px-6 py-5", "group-data-[state=collapsed]:-ml-6")}>
           <p className="text-center text-xs text-gray-500 leading-relaxed">
             Powered by{" "}
             <a
               href="https://www.outrightcreators.com/"
               target="_blank"
               rel="noopener noreferrer"
-              className="font-semibold text-[#139BC3] hover:underline transition-underline"
+              className="font-semibold text-[#139BC3] hover:underline transition-colors "
+              
             >
               Outright Creators
             </a>

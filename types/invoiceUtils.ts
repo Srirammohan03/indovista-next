@@ -17,7 +17,7 @@ const COMPANY = {
 
   // QR / UPI DETAILS
   upi: {
-    vpa: "indovista@icici",
+    vpa: "fouzisumbul412-1@okaxis",
     payeeName: "INDO VISTA",
     notePrefix: "Invoice",
   },
