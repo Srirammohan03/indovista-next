@@ -1,4 +1,6 @@
+// app/(dashboard)/compliance/page.tsx
 "use client";
+
 import React, { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import {
@@ -36,11 +38,47 @@ type SummaryResp = {
   roles: { role: string; count: number }[];
 };
 
+type CustomerMini = {
+  id: string;
+  customerCode: string;
+  companyName: string;
+  status: string;
+  kycStatus: boolean;
+  sanctionsCheck: boolean;
+  updatedAt: string;
+};
+
+type DocumentMini = {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  uploadedAt: string;
+  expiryDate: string;
+  shipmentRef: string;
+  customerName: string;
+};
+
+function startOfDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function parseDateOnly(s: string) {
+  if (!s) return null;
+  const [y, m, d] = s.split("-").map((v) => Number(v));
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+
 const CompliancePage = () => {
   const router = useRouter();
 
   const [summary, setSummary] = useState<SummaryResp | null>(null);
   const [recentLogs, setRecentLogs] = useState<AuditLogRow[]>([]);
+  const [customers, setCustomers] = useState<CustomerMini[]>([]);
+  const [documents, setDocuments] = useState<DocumentMini[]>([]);
   const [loading, setLoading] = useState(true);
 
   const roleCountMap = useMemo(() => {
@@ -54,13 +92,18 @@ const CompliancePage = () => {
     async function load() {
       setLoading(true);
       try {
-        const [s, logs] = await Promise.all([
+        const [s, logs, custs, docs] = await Promise.all([
           fetch("/api/compliance/summary", { cache: "no-store" }).then((r) => r.json()),
           fetch("/api/compliance/audit-logs?take=5", { cache: "no-store" }).then((r) => r.json()),
+          fetch("/api/customers?take=2000", { cache: "no-store" }).then((r) => r.json()),
+          fetch("/api/documents", { cache: "no-store" }).then((r) => r.json()),
         ]);
+
         if (!cancelled) {
-          setSummary(s);
-          setRecentLogs(logs);
+          setSummary(s || null);
+          setRecentLogs(Array.isArray(logs) ? logs : []);
+          setCustomers(Array.isArray(custs) ? custs : []);
+          setDocuments(Array.isArray(docs) ? docs : []);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -105,6 +148,54 @@ const CompliancePage = () => {
     }
   };
 
+  const today = useMemo(() => startOfDay(new Date()), []);
+  const expiringCutoff = useMemo(() => {
+    const x = new Date(today);
+    x.setDate(x.getDate() + 30);
+    return x;
+  }, [today]);
+
+  // ✅ Live checks from Customers + Documents (NO extra UI section)
+  const kycPending = useMemo(
+    () => customers.filter((c) => !Boolean(c.kycStatus)).length,
+    [customers]
+  );
+  const sanctionsPending = useMemo(
+    () => customers.filter((c) => !Boolean(c.sanctionsCheck)).length,
+    [customers]
+  );
+
+  const docPending = useMemo(
+    () => documents.filter((d) => String(d.status || "").toUpperCase() === "PENDING").length,
+    [documents]
+  );
+  const docMissing = useMemo(
+    () => documents.filter((d) => String(d.status || "").toUpperCase() === "MISSING").length,
+    [documents]
+  );
+  const docRejected = useMemo(
+    () => documents.filter((d) => String(d.status || "").toUpperCase() === "REJECTED").length,
+    [documents]
+  );
+
+  const docExpired = useMemo(() => {
+    let n = 0;
+    for (const d of documents) {
+      const exp = parseDateOnly(d.expiryDate);
+      if (exp && exp < today) n++;
+    }
+    return n;
+  }, [documents, today]);
+
+  const docExpiring = useMemo(() => {
+    let n = 0;
+    for (const d of documents) {
+      const exp = parseDateOnly(d.expiryDate);
+      if (exp && exp >= today && exp <= expiringCutoff) n++;
+    }
+    return n;
+  }, [documents, today, expiringCutoff]);
+
   const k = summary?.kpis;
 
   return (
@@ -115,7 +206,7 @@ const CompliancePage = () => {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-12">
         <Card className="p-6 flex items-center justify-between border-l-4 border-blue-500">
           <div>
             <p className="text-sm font-medium text-gray-500 mb-1">Total Actions</p>
@@ -151,21 +242,52 @@ const CompliancePage = () => {
           </div>
         </Card>
 
-        <Card
-          className="p-6 flex items-center justify-between border-l-4 border-amber-500 cursor-pointer hover:shadow-md transition-shadow"
+        {/* ✅ UPDATED: No extra icon/box, only counts inside this card */}
+        {/* <Card
+          className="p-6 border-l-4 border-amber-500 cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => router.push("/compliance/tasks")}
         >
           <div>
             <p className="text-sm font-medium text-gray-500 mb-1">Pending Reviews</p>
             <p className="text-2xl font-bold text-gray-900">{loading ? "…" : k?.pendingReviews ?? 0}</p>
+
             <p className="text-xs text-amber-600 font-medium mt-1 flex items-center gap-1">
               Requires attention <ArrowRight className="w-3 h-3" />
             </p>
+
+          
+            <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-xs text-gray-600">
+              <div className="flex items-center justify-between">
+                <span>KYC pending</span>
+                <span className="font-semibold text-gray-900">{loading ? "…" : kycPending}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Sanctions pending</span>
+                <span className="font-semibold text-gray-900">{loading ? "…" : sanctionsPending}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Docs pending</span>
+                <span className="font-semibold text-gray-900">{loading ? "…" : docPending}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Docs missing</span>
+                <span className="font-semibold text-gray-900">{loading ? "…" : docMissing}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Docs rejected</span>
+                <span className="font-semibold text-gray-900">{loading ? "…" : docRejected}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Expiring ≤30d</span>
+                <span className="font-semibold text-gray-900">{loading ? "…" : docExpiring}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Docs expired</span>
+                <span className="font-semibold text-gray-900">{loading ? "…" : docExpired}</span>
+              </div>
+            </div>
           </div>
-          <div className="p-3 bg-amber-50 rounded-lg">
-            <AlertTriangle className="w-6 h-6 text-amber-600" />
-          </div>
-        </Card>
+        </Card> */}
       </div>
 
       {/* User Roles */}
@@ -207,7 +329,10 @@ const CompliancePage = () => {
 
         <div className="space-y-4">
           {recentLogs.map((log) => (
-            <div key={log.id} className="flex items-start gap-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+            <div
+              key={log.id}
+              className="flex items-start gap-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            >
               <div className="mt-1 p-2 bg-gray-100 rounded-full">{getLogIcon(log.entityType)}</div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
