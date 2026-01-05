@@ -552,18 +552,18 @@ if (loading) {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          {/* <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" className="rounded-full bg-white/70 shadow-sm hover:bg-white">
               <RefreshCw className="mr-2 h-4 w-4" />
               Refresh
-            </Button>
+            </Button> 
             <Badge className="rounded-full bg-slate-900 px-3 py-1 text-white">
               {shipmentsCount} shipments
             </Badge>
             <Badge className="rounded-full bg-slate-900 px-3 py-1 text-white">
               {customersCount} customers
             </Badge>
-          </div>
+          </div> */}
         </div>
 
         {/* Filters */}
