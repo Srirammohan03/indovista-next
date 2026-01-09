@@ -676,6 +676,7 @@ enum AuditEntityType {
   PRODUCT
   VEHICLE
   DRIVER
+  QUOTE
 }
 
 enum AuditAction {
