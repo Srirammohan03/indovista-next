@@ -1,3 +1,4 @@
+// app\(dashboard)\shipments\[id]\page.tsx
 "use client";
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
@@ -36,6 +37,9 @@ import { VehicleDriverAssignModal } from "@/app/(dashboard)/shipments/components
 import { CreateQuoteButton } from "@/components/CreateQuoteButton";
 import { CreateInvoiceButton } from "@/components/CreateInvoiceButton";
 import { AddPaymentModal } from "@/components/AddPaymentModal";
+import { CreateInvoiceModal } from "@/components/CreateInvoiceModal";
+import { CreateInvoiceBtn } from "@/components/CreateInvoiceBtn";
+import { CreateQuoteBtn } from "@/components/CreateQuoteBtn";
 
 /* -------------------- helpers -------------------- */
 const modeIcon = (m: any) =>
@@ -804,17 +808,37 @@ export default function ShipmentDetail() {
   const currency =
     shipment.financials?.currency ?? shipment.invoices?.[0]?.currency ?? "INR";
 
-  const totalBilled = invoices.reduce(
+  // 1️⃣ Total invoiced (only non-draft invoices)
+  const totalInvoiced = invoices.reduce(
     (sum: number, inv: any) =>
-      sum + (inv.status !== "DRAFT" ? Number(inv.amount || 0) : 0),
+      inv.status !== "DRAFT" ? sum + Number(inv.amount || 0) : sum,
     0
   );
+
+  // 2️⃣ Applied payments (linked to invoices)
+  const appliedPaid = payments.reduce(
+    (sum: number, p: any) =>
+      p.status === "COMPLETED" && p.invoiceId
+        ? sum + Number(p.amount || 0)
+        : sum,
+    0
+  );
+
   const totalPaid = payments.reduce(
     (sum: number, p: any) =>
-      sum + (p.status === "COMPLETED" ? Number(p.amount || 0) : 0),
+      p.status === "COMPLETED" ? sum + Number(p.amount || 0) : sum,
     0
   );
-  const outstanding = totalBilled - totalPaid;
+
+  // 4️⃣ Outstanding (invoice due only)
+  const hasInvoices = invoices.length > 0;
+
+  const outstanding = Math.max(
+    hasInvoices
+      ? totalInvoiced - appliedPaid
+      : (shipment.financials?.revenue ?? 0) - totalPaid,
+    0
+  );
 
   return (
     <div className="space-y-6">
@@ -941,17 +965,18 @@ export default function ShipmentDetail() {
 
         {activeTab === "billing" && (
           <Card>
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
               <div>
                 <h3 className="font-semibold text-gray-900">Financials</h3>
                 <p className="text-sm text-gray-500 mt-1">
-                  Keep shipment financials + manage invoices & payments below.
+                  Revenue, invoices, and payments for this shipment.
                 </p>
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <CreateQuoteButton shipmentId={shipment.id} />
-                <CreateInvoiceButton shipmentId={shipment.id} />
+                <CreateQuoteBtn shipmentId={shipment.id} />
+                <CreateInvoiceBtn shipmentId={shipment.id} />
                 <button
                   onClick={() => setFinancialOpen(true)}
                   className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-semibold hover:bg-blue-700 inline-flex items-center gap-2"
@@ -962,65 +987,69 @@ export default function ShipmentDetail() {
               </div>
             </div>
 
-            {/* ✅ KEEP THIS SAME (Revenue / Cost / Margin) */}
+            {/* Revenue / Cost / Margin */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
               <div className="p-4 bg-gray-50 rounded">
-                <div className="text-sm text-gray-500">Revenue</div>
+                <div className="text-sm text-gray-500">Revenue (Selling)</div>
                 <div className="text-2xl font-bold text-gray-900">
-                  {formatCurrency(
-                    Number(shipment.financials?.revenue || 0),
-                    currency
-                  )}
+                  {formatCurrency(shipment.financials?.revenue ?? 0, currency)}
                 </div>
               </div>
+
               <div className="p-4 bg-gray-50 rounded">
-                <div className="text-sm text-gray-500">Cost</div>
+                <div className="text-sm text-gray-500">Cost (Vendor)</div>
                 <div className="text-2xl font-bold text-gray-900">
-                  {formatCurrency(
-                    Number(shipment.financials?.cost || 0),
-                    currency
-                  )}
+                  {formatCurrency(shipment.financials?.cost ?? 0, currency)}
                 </div>
               </div>
-              <div className="p-4 bg-green-50 rounded border border-green-100">
+
+              <div className="p-4 bg-green-50 rounded border border-green-200">
                 <div className="text-sm text-green-700">Margin</div>
                 <div className="text-2xl font-bold text-green-800">
                   {formatCurrency(
-                    Number(shipment.financials?.margin || 0),
+                    (shipment.financials?.revenue ?? 0) -
+                      (shipment.financials?.cost ?? 0),
                     currency
                   )}
                 </div>
-                <div className="text-xs text-green-700 mt-2">
-                  Invoice: {shipment.financials?.invoiceStatus || "DRAFT"}
+                <div className="text-xs text-green-700 mt-1">
+                  Invoice Status:{" "}
+                  {shipment.financials?.invoiceStatus ?? "DRAFT"}
                 </div>
               </div>
             </div>
 
-            {/* ✅ Billing Summary */}
+            {/* Billing Summary */}
             <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
               <div className="p-4 bg-gray-50 rounded">
-                <div className="text-sm text-gray-500">Total Billed</div>
+                <div className="text-sm text-gray-500">Total Invoiced</div>
                 <div className="text-xl font-bold text-gray-900">
-                  {formatCurrency(totalBilled, currency)}
+                  {formatCurrency(totalInvoiced, currency)}
                 </div>
               </div>
+
               <div className="p-4 bg-gray-50 rounded">
                 <div className="text-sm text-gray-500">Total Paid</div>
                 <div className="text-xl font-bold text-gray-900">
                   {formatCurrency(totalPaid, currency)}
                 </div>
               </div>
-              <div className="p-4 bg-yellow-50 rounded border border-yellow-100">
-                <div className="text-sm text-yellow-700">Outstanding</div>
+
+              <div className="p-4 bg-yellow-50 rounded border border-yellow-200">
+                <div className="text-sm text-yellow-700">
+                  {hasInvoices ? "Outstanding" : "Outstanding (Pre-Invoice)"}
+                </div>
+
                 <div className="text-xl font-bold text-yellow-800">
                   {formatCurrency(outstanding, currency)}
                 </div>
               </div>
             </div>
 
-            {/* ✅ Invoice List */}
+            {/* Invoices */}
             <div className="mt-6">
               <h3 className="font-semibold text-gray-900 mb-3">Invoices</h3>
+
               {invoices.length === 0 ? (
                 <div className="text-gray-500">No invoices created yet.</div>
               ) : (
@@ -1032,15 +1061,15 @@ export default function ShipmentDetail() {
                     >
                       <div className="flex justify-between gap-3">
                         <div className="font-semibold text-gray-900">
-                          {inv.invoiceNumber}{" "}
-                          <span className="text-xs text-gray-500">
+                          {inv.invoiceNumber}
+                          <span className="ml-2 text-xs text-gray-500">
                             ({inv.status})
                           </span>
                         </div>
                         <div className="font-bold">
                           {formatCurrency(
-                            Number(inv.amount || 0),
-                            inv.currency || currency
+                            inv.amount ?? 0,
+                            inv.currency ?? currency
                           )}
                         </div>
                       </div>
@@ -1054,7 +1083,7 @@ export default function ShipmentDetail() {
               )}
             </div>
 
-            {/* ✅ Payments */}
+            {/* Payments */}
             <div className="mt-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-gray-900">Payment History</h3>
@@ -1079,24 +1108,22 @@ export default function ShipmentDetail() {
                       <div className="flex justify-between gap-3">
                         <span className="font-bold">
                           {formatCurrency(
-                            Number(p.amount || 0),
-                            p.currency || currency
+                            p.amount ?? 0,
+                            p.currency ?? currency
                           )}
                         </span>
-                        <span className="text-xs">
+                        <span className="text-xs text-gray-500">
                           {p.date ? formatIST(p.date) : "-"}
                         </span>
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">
+
+                      <div className="text-xs text-gray-600 mt-1">
                         Method: {p.method || "-"} • Tx:{" "}
                         {p.transactionNum || "-"} • Status: {p.status}
-                        {p.invoiceId ? " • Applied: Yes" : " • Applied: No"}
+                        {p.invoiceId
+                          ? " • Applied to Invoice"
+                          : " • Advance Payment"}
                       </div>
-                      {p.notes && (
-                        <div className="text-xs text-gray-600 mt-1">
-                          {p.notes}
-                        </div>
-                      )}
                     </div>
                   ))}
                 </div>

@@ -1,3 +1,4 @@
+// components\CreateInvoiceModal.tsx
 "use client";
 import React, { useEffect, useMemo, useState } from "react";
 import { X, Loader2, Save, Plus, Trash2 } from "lucide-react";
@@ -16,6 +17,7 @@ type Props = {
   isOpen: boolean;
   mode: "create" | "edit";
   invoiceId?: string | null;
+  shipmentId?: string; // ✅ optional, backward-safe
   onClose: () => void;
   onSaved: () => void;
 };
@@ -26,6 +28,7 @@ export const CreateInvoiceModal: React.FC<Props> = ({
   isOpen,
   mode,
   invoiceId,
+  shipmentId,
   onClose,
   onSaved,
 }) => {
@@ -57,8 +60,32 @@ export const CreateInvoiceModal: React.FC<Props> = ({
   });
 
   const [items, setItems] = useState<InvoiceLineItem[]>([
-    { id: "", description: "Freight Charges", quantity: 1, rate: 0, taxRate: 0, hsnCode: "", amount: 0 },
+    {
+      id: "",
+      description: "Freight Charges",
+      quantity: 1,
+      rate: 0,
+      taxRate: 0,
+      hsnCode: "",
+      amount: 0,
+    },
   ]);
+  const preloadShipment = async (id: string) => {
+    const res = await fetch(`/api/shipments/${id}`, { cache: "no-store" });
+    if (!res.ok) throw new Error("Shipment not found");
+    const s = await res.json();
+
+    setForm((p) => ({
+      ...p,
+      shipmentId: s.id,
+      shipmentRef: s.reference,
+      customerName:
+        s.customer || s.customer?.companyName || s.customer?.name || "-",
+      customerGstin: s.customer?.gstin || "",
+      placeOfSupply: s.placeOfSupply || "",
+      currency: s.financials?.currency || "INR",
+    }));
+  };
 
   const canSave = useMemo(() => {
     if (!isEdit && !form.shipmentId) return false;
@@ -71,9 +98,12 @@ export const CreateInvoiceModal: React.FC<Props> = ({
   const loadShipments = async (q: string) => {
     setLoadingShipments(true);
     try {
-      const res = await fetch(`/api/shipments?q=${encodeURIComponent(q || "")}&take=50`, {
-        cache: "no-store",
-      });
+      const res = await fetch(
+        `/api/shipments?q=${encodeURIComponent(q || "")}&take=50`,
+        {
+          cache: "no-store",
+        }
+      );
       const data = await res.json();
 
       const normalized: ShipmentPick[] = Array.isArray(data)
@@ -86,7 +116,8 @@ export const CreateInvoiceModal: React.FC<Props> = ({
               s.customer?.name ||
               s.customer ||
               "-",
-            currency: s.currency || s.currencyCode || s.customer?.currency || "INR",
+            currency:
+              s.currency || s.currencyCode || s.customer?.currency || "INR",
             customerGstin: s.customerGstin || s.customer?.gstin || "",
             placeOfSupply: s.placeOfSupply || s.customer?.placeOfSupply || "",
           }))
@@ -103,7 +134,9 @@ export const CreateInvoiceModal: React.FC<Props> = ({
   const loadInvoice = async (id: string) => {
     setLoadingInvoice(true);
     try {
-      const res = await fetch(`/api/invoices/${encodeURIComponent(id)}`, { cache: "no-store" });
+      const res = await fetch(`/api/invoices/${encodeURIComponent(id)}`, {
+        cache: "no-store",
+      });
       const data = await res.json();
 
       if (!res.ok) throw new Error(data?.message || "Invoice not found");
@@ -125,7 +158,9 @@ export const CreateInvoiceModal: React.FC<Props> = ({
         status: String(data.status || "DRAFT"),
       });
 
-      setItems(Array.isArray(data.items) && data.items.length ? data.items : []);
+      setItems(
+        Array.isArray(data.items) && data.items.length ? data.items : []
+      );
     } catch (e: any) {
       alert(e?.message || "Failed to load invoice");
       onClose();
@@ -137,17 +172,24 @@ export const CreateInvoiceModal: React.FC<Props> = ({
   useEffect(() => {
     if (!isOpen) return;
 
-    // reset when opening
+    // always reset
     setInvoiceNumber("");
     setPaidAmount(0);
     setBalanceAmount(0);
 
+    // edit mode = unchanged
     if (isEdit) {
       if (invoiceId) loadInvoice(invoiceId);
       return;
     }
 
-    // create mode
+    // ✅ Shipment-bound create (NEW, SAFE)
+    if (shipmentId) {
+      preloadShipment(shipmentId);
+      return;
+    }
+
+    // 🟢 OLD behavior (UNCHANGED)
     setForm({
       shipmentId: "",
       shipmentRef: "",
@@ -160,11 +202,21 @@ export const CreateInvoiceModal: React.FC<Props> = ({
       tdsRate: "0",
       status: "DRAFT",
     });
-    setItems([{ id: "", description: "Freight Charges", quantity: 1, rate: 0, taxRate: 0, hsnCode: "", amount: 0 }]);
+
+    setItems([
+      {
+        id: "",
+        description: "Freight Charges",
+        quantity: 1,
+        rate: 0,
+        taxRate: 0,
+        hsnCode: "",
+        amount: 0,
+      },
+    ]);
 
     loadShipments("");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, isEdit, invoiceId]);
+  }, [isOpen, isEdit, invoiceId, shipmentId]);
 
   const onSelectShipment = async (shipmentId: string) => {
     const pick = shipments.find((s) => s.id === shipmentId);
@@ -182,7 +234,18 @@ export const CreateInvoiceModal: React.FC<Props> = ({
   };
 
   const addItem = () => {
-    setItems((p) => [...p, { id: "", description: "", quantity: 1, rate: 0, taxRate: 0, hsnCode: "", amount: 0 }]);
+    setItems((p) => [
+      ...p,
+      {
+        id: "",
+        description: "",
+        quantity: 1,
+        rate: 0,
+        taxRate: 0,
+        hsnCode: "",
+        amount: 0,
+      },
+    ]);
   };
 
   const removeItem = (idx: number) => {
@@ -247,8 +310,8 @@ export const CreateInvoiceModal: React.FC<Props> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl">
+    <div className="fixed inset-0 z-[70]  flex items-center justify-center h-full bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl h-[90vh] overflow-y-auto flex flex-col">
         <div className="flex items-center justify-between p-5 sm:p-6 border-b border-gray-100">
           <div className="min-w-0">
             <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">
@@ -256,13 +319,19 @@ export const CreateInvoiceModal: React.FC<Props> = ({
             </h2>
             {isEdit ? (
               <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                Invoice No: <span className="font-mono">{invoiceNumber || "-"}</span>
+                Invoice No:{" "}
+                <span className="font-mono">{invoiceNumber || "-"}</span>
               </p>
             ) : (
-              <p className="text-xs sm:text-sm text-gray-500 mt-1">Select Shipment Ref → auto-fill Customer</p>
+              <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                Select Shipment Ref → auto-fill Customer
+              </p>
             )}
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full">
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-full"
+          >
             <X className="w-5 h-5 text-gray-400" />
           </button>
         </div>
@@ -280,24 +349,32 @@ export const CreateInvoiceModal: React.FC<Props> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-xl border border-gray-200 bg-gray-50">
                   <div>
                     <div className="text-xs text-gray-500">Paid</div>
-                    <div className="font-bold text-gray-900">{paidAmount.toFixed(2)}</div>
+                    <div className="font-bold text-gray-900">
+                      {paidAmount.toFixed(2)}
+                    </div>
                   </div>
                   <div>
                     <div className="text-xs text-gray-500">Balance</div>
-                    <div className="font-bold text-gray-900">{balanceAmount.toFixed(2)}</div>
+                    <div className="font-bold text-gray-900">
+                      {balanceAmount.toFixed(2)}
+                    </div>
                   </div>
                   <div>
                     <div className="text-xs text-gray-500">Shipment</div>
-                    <div className="font-mono text-gray-900">{form.shipmentRef || form.shipmentId || "-"}</div>
+                    <div className="font-mono text-gray-900">
+                      {form.shipmentRef || form.shipmentId || "-"}
+                    </div>
                   </div>
                 </div>
               )}
 
               {/* Shipment selector (create only) */}
-              {!isEdit && (
+              {!isEdit && !shipmentId && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="sm:col-span-2">
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Search Shipment Ref</label>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">
+                      Search Shipment Ref
+                    </label>
                     <div className="flex gap-2">
                       <input
                         className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
@@ -331,13 +408,17 @@ export const CreateInvoiceModal: React.FC<Props> = ({
                   </div>
 
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Customer</label>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">
+                      Customer
+                    </label>
                     <input
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50"
                       value={form.customerName}
                       readOnly
                     />
-                    <div className="text-xs text-gray-500 mt-1">Auto-filled from shipment.</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      Auto-filled from shipment.
+                    </div>
                   </div>
                 </div>
               )}
@@ -345,27 +426,37 @@ export const CreateInvoiceModal: React.FC<Props> = ({
               {/* Header fields */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Issue Date</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Issue Date
+                  </label>
                   <input
                     type="date"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                     value={form.issueDate}
-                    onChange={(e) => setForm({ ...form, issueDate: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, issueDate: e.target.value })
+                    }
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Due Date</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Due Date
+                  </label>
                   <input
                     type="date"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                     value={form.dueDate}
-                    onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, dueDate: e.target.value })
+                    }
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Currency</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Currency
+                  </label>
                   <input
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50"
                     value={form.currency}
@@ -376,21 +467,29 @@ export const CreateInvoiceModal: React.FC<Props> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Customer GSTIN (Optional)</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Customer GSTIN (Optional)
+                  </label>
                   <input
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                     value={form.customerGstin}
-                    onChange={(e) => setForm({ ...form, customerGstin: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, customerGstin: e.target.value })
+                    }
                     placeholder="GSTIN"
                   />
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Place of Supply (Optional)</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Place of Supply (Optional)
+                  </label>
                   <input
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                     value={form.placeOfSupply}
-                    onChange={(e) => setForm({ ...form, placeOfSupply: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, placeOfSupply: e.target.value })
+                    }
                     placeholder="State / City"
                   />
                 </div>
@@ -412,54 +511,83 @@ export const CreateInvoiceModal: React.FC<Props> = ({
 
                 <div className="p-3 space-y-3">
                   {items.map((it, idx) => (
-                    <div key={idx} className="grid grid-cols-1 sm:grid-cols-12 gap-2 border border-gray-100 rounded-lg p-3">
+                    <div
+                      key={idx}
+                      className="grid grid-cols-1 sm:grid-cols-12 gap-2 border border-gray-100 rounded-lg p-3"
+                    >
                       <div className="sm:col-span-5">
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">Description</label>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">
+                          Description
+                        </label>
                         <input
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                           value={it.description}
-                          onChange={(e) => updateItem(idx, { description: e.target.value })}
+                          onChange={(e) =>
+                            updateItem(idx, { description: e.target.value })
+                          }
                         />
                       </div>
 
                       <div className="sm:col-span-2">
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">HSN/SAC</label>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">
+                          HSN/SAC
+                        </label>
                         <input
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                           value={it.hsnCode || ""}
-                          onChange={(e) => updateItem(idx, { hsnCode: e.target.value })}
+                          onChange={(e) =>
+                            updateItem(idx, { hsnCode: e.target.value })
+                          }
                         />
                       </div>
 
                       <div className="sm:col-span-1">
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">Qty</label>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">
+                          Qty
+                        </label>
                         <input
                           type="number"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                           value={it.quantity}
-                          onChange={(e) => updateItem(idx, { quantity: Number(e.target.value || 0) })}
+                          onChange={(e) =>
+                            updateItem(idx, {
+                              quantity: Number(e.target.value || 0),
+                            })
+                          }
                         />
                       </div>
 
                       <div className="sm:col-span-2">
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">Rate</label>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">
+                          Rate
+                        </label>
                         <input
                           type="number"
                           step="0.01"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                           value={it.rate}
-                          onChange={(e) => updateItem(idx, { rate: Number(e.target.value || 0) })}
+                          onChange={(e) =>
+                            updateItem(idx, {
+                              rate: Number(e.target.value || 0),
+                            })
+                          }
                         />
                       </div>
 
                       <div className="sm:col-span-1">
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">GST%</label>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">
+                          GST%
+                        </label>
                         <input
                           type="number"
                           step="0.01"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                           value={it.taxRate || 0}
-                          onChange={(e) => updateItem(idx, { taxRate: Number(e.target.value || 0) })}
+                          onChange={(e) =>
+                            updateItem(idx, {
+                              taxRate: Number(e.target.value || 0),
+                            })
+                          }
                         />
                       </div>
 
@@ -480,22 +608,30 @@ export const CreateInvoiceModal: React.FC<Props> = ({
               {/* TDS + status */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">TDS Rate %</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    TDS Rate %
+                  </label>
                   <input
                     type="number"
                     step="0.01"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                     value={form.tdsRate}
-                    onChange={(e) => setForm({ ...form, tdsRate: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, tdsRate: e.target.value })
+                    }
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Status</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Status
+                  </label>
                   <select
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                     value={form.status}
-                    onChange={(e) => setForm({ ...form, status: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, status: e.target.value })
+                    }
                   >
                     <option value="DRAFT">Draft</option>
                     <option value="SENT">Sent</option>
@@ -507,7 +643,11 @@ export const CreateInvoiceModal: React.FC<Props> = ({
         </div>
 
         <div className="p-5 sm:p-6 border-t border-gray-100 flex justify-end gap-3">
-          <button onClick={onClose} type="button" className="px-5 py-2.5 border border-gray-300 rounded-lg font-semibold hover:bg-gray-50">
+          <button
+            onClick={onClose}
+            type="button"
+            className="px-5 py-2.5 border border-gray-300 rounded-lg font-semibold hover:bg-gray-50"
+          >
             Cancel
           </button>
 
@@ -517,7 +657,11 @@ export const CreateInvoiceModal: React.FC<Props> = ({
             type="button"
             className="px-6 py-2.5 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 disabled:opacity-60 flex items-center gap-2"
           >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {saving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
             {isEdit ? "Save Changes" : "Create Invoice"}
           </button>
         </div>
